@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import Auth from './components/Auth';
+import Profile from './components/Profile';
 import { supabase } from './supabaseClient';
 
 function App() {
   const [session, setSession] = useState(null);
   const [toast, setToast] = useState(null);
+  const [currentView, setCurrentView] = useState('home');
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -25,6 +27,7 @@ function App() {
       setSession(session);
       
       if (event === 'SIGNED_IN') {
+        setCurrentView('home');
         showToast('Zalogowano pomyślnie!', 'success');
       } else if (event === 'SIGNED_OUT') {
         showToast('Wylogowano pomyślnie.', 'info');
@@ -54,18 +57,22 @@ function App() {
         </div>
       )}
 
-      <Header session={session} />
+      <Header session={session} onNavigate={setCurrentView} />
       
-      <main>
+      <main className="p-4">
         {!session ? (
           <Auth />
         ) : (
-          <div className="p-8 text-center mt-12 animate-in fade-in duration-500">
-            <h2 className="text-3xl font-extrabold text-slate-900">Witaj w e-Apteczce</h2>
-            <p className="text-slate-500 mt-3 max-w-md mx-auto">
-              Zalogowałeś się poprawnie.
-            </p>
-          </div>
+          currentView === 'profile' ? (
+            <Profile session={session} />
+          ) : (
+            <div className="p-8 text-center mt-12 animate-in fade-in duration-500">
+              <h2 className="text-3xl font-extrabold text-slate-900">Witaj w e-Apteczce</h2>
+              <p className="text-slate-500 mt-3 max-w-md mx-auto">
+                Zalogowałeś się poprawnie.
+              </p>
+            </div>
+          )
         )}
       </main>
     </div>
