@@ -78,7 +78,7 @@ const Header = ({ session, onNavigate }) => {
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Moje konto</p>
                 </div>
                 
-                {/* ZMIANA: Podpięte kliknięcie w profil */}
+                
                 <button 
                   onClick={() => { onNavigate('profile'); setIsMenuOpen(false); }}
                   className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors flex items-center gap-2"
