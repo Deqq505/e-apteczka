@@ -24,40 +24,44 @@ const Dashboard = () => {
   const [medications, setMedications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [view, setView] = useState('list');
+  const [newCabinetName, setNewCabinetName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+
   const [selectedCabinet, setSelectedCabinet] = useState('');
   const [isListActive, setIsListActive] = useState(true);
   const [showArchive, setShowArchive] = useState(false);
 
   //Wypisanie szafek
-  useEffect(() => {
-    const fetchCabinets = async () => {
-      setIsLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) return;
+  const fetchCabinets = async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) return;
 
-      const { data, error } = await supabase
-        .from('szafki')
-        .select('*')
-        .eq('id_wlasciciela', user.id);
+    const { data, error } = await supabase
+      .from('szafki')
+      .select('*')
+      .eq('id_wlasciciela', user.id);
 
-      //Ustawienie pierwszej szafki jako domyślnej, jeśli istnieje
-      if (!error && data) {
-        setCabinets(data);
-        if (data.length > 0) {
-          setSelectedCabinet(data[0].id_szafki);
-        }
+    if (!error && data) {
+      setCabinets(data);
+      if (data.length > 0 && !selectedCabinet) {
+        setSelectedCabinet(data[0].id_szafki);
       }
-      setIsLoading(false);
-    };
+    }
+    setIsLoading(false);
+  };
 
+  useEffect(() => {
     fetchCabinets();
   }, []);
   
 //Wypisanie leków z szafki
   useEffect(() => {
     const fetchMedications = async () => {
-      if (!selectedCabinet) return;
+      if (!selectedCabinet || view !== 'list') return; 
 
       const { data, error } = await supabase
         .from('zasoby')
@@ -70,12 +74,37 @@ const Dashboard = () => {
     };
 
     fetchMedications();
-  }, [selectedCabinet]);
+  }, [selectedCabinet, view]);
 
-  
-  // Leki aktywne = 'w szafce'
+
+  const handleAddCabinet = async (e) => {
+    e.preventDefault();
+    if (!newCabinetName.trim()) return;
+    setIsSubmitting(true);
+    // Dodanie szafki do bazy danych
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: cabinetData, error: cabinetError } = await supabase
+      .from('szafki')
+      .insert([{ nazwa_szafki: newCabinetName, id_wlasciciela: user.id }])
+      .select();
+    // Dodanie logu aktywności do bazy danych
+    if (!cabinetError && cabinetData && cabinetData[0]) {
+      await supabase.from('logi_aktywnosci').insert([{
+        id_uzytkownika: user.id,
+        id_szafki: cabinetData[0].id_szafki,
+        operacja: 'dodanie', 
+        szczegoly: `Utworzono nową szafkę: ${newCabinetName}`
+      }]);
+      setNewCabinetName('');
+      setView('list'); 
+      fetchCabinets();
+    } else {
+      alert("Błąd: " + (cabinetError?.message || "Błąd"));
+    }
+    setIsSubmitting(false);
+  };
+
   const activeMedications = medications.filter(medication => medication.status === 'w szafce');
-  // Archiwum to wszystkie pozostałe statusy
   const archivedMedications = medications.filter(medication => medication.status !== 'w szafce');
 
   const MedicationCard = ({ medication, isArchived }) => {
@@ -89,7 +118,6 @@ const Dashboard = () => {
           <h3 className={`text-lg font-semibold ${isArchived ? 'line-through' : ''}`}>
             {medication.nazwa_reczna}
           </h3>
-          {/* Status leku */}
           {isArchived && <p className="text-[10px] uppercase font-bold opacity-50 tracking-tight">{medication.status}</p>}
           <p className="text-sm mt-0.5 opacity-80">
             Zostało: <span className="font-medium">{medication.ilosc} {medication.jednostka}</span>
@@ -103,7 +131,7 @@ const Dashboard = () => {
     );
   };
 
-  if (isLoading) {
+  if (isLoading && cabinets.length === 0) {
     return (
       <div className="max-w-3xl mx-auto mt-20 text-center text-slate-400 font-medium">
         Ładowanie danych z bazy...
@@ -111,98 +139,114 @@ const Dashboard = () => {
     );
   }
 
-  if (cabinets.length === 0) {
+  // Wyświetlenie formularza dodawania szafki
+  if (view === 'addCabinet') {
     return (
-      <div className="max-w-3xl mx-auto mt-6 p-8 bg-white border border-slate-200 rounded-xl shadow-sm text-center">
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Brak szafek</h2>
-        <p className="text-slate-500 mb-6 text-sm">Nie masz jeszcze przypisanej żadnej szafki.</p>
-        <button className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-medium transition-colors shadow-sm">
-          + Utwórz pierwszą szafkę
-        </button>
+      <div className="max-w-md mx-auto mt-6 p-6 bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Nowa szafka</h2>
+        <form onSubmit={handleAddCabinet}>
+          <div className="mb-6">
+            <input 
+              autoFocus
+              type="text" 
+              value={newCabinetName}
+              onChange={(e) => setNewCabinetName(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+              placeholder="Nazwa szafki..."
+              required
+            />
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => setView('list')} className="flex-1 px-4 py-3 border rounded-xl">Anuluj</button>
+            <button type="submit" disabled={isSubmitting} className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-xl">Utwórz</button>
+          </div>
+        </form>
       </div>
     );
   }
+
   {/*Główna zawartość dashboardu*/}
   return (
     <div className="max-w-3xl mx-auto mt-6 p-4">
       
-      <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="w-full sm:w-auto">
-          <label className="text-sm font-medium text-slate-500 mb-1.5 block">Wybierz szafkę:</label>
-          <select 
-            value={selectedCabinet}
-            onChange={(e) => setSelectedCabinet(e.target.value)}
-            className="w-full sm:w-72 bg-slate-50 border border-slate-300 text-slate-800 text-lg rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+      {cabinets.length === 0 ? (
+        <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm text-center">
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Brak szafek</h2>
+          <button 
+            onClick={() => setView('addCabinet')}
+            className="bg-slate-900 text-white px-6 py-3 rounded-xl font-medium"
           >
-            {cabinets.map(cabinet => (
-              <option key={cabinet.id_szafki} value={cabinet.id_szafki}>
-                {cabinet.nazwa_szafki}
-              </option>
-            ))}
-          </select>
+            + Utwórz pierwszą szafkę
+          </button>
         </div>
-        
-        <button className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-medium transition-colors shadow-sm flex items-center justify-center gap-2">
-          <span className="text-xl leading-none">+</span> Dodaj lek
-        </button>
-      </div>
+      ) : (
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="w-full sm:w-auto">
+            <label className="text-sm font-medium text-slate-500 mb-1.5 block">Wybierz szafkę:</label>
+            <div className="flex gap-2">
+              <select 
+                value={selectedCabinet}
+                onChange={(e) => setSelectedCabinet(e.target.value)}
+                className="w-full sm:w-72 bg-slate-50 border border-slate-300 text-slate-800 text-lg rounded-lg p-2.5"
+              >
+                {cabinets.map(cabinet => (
+                  <option key={cabinet.id_szafki} value={cabinet.id_szafki}>{cabinet.nazwa_szafki}</option>
+                ))}
+              </select>
+              <button onClick={() => setView('addCabinet')} className="p-2.5 bg-slate-100 rounded-lg">+</button>
+            </div>
+          </div>
+          <button className="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-medium">+ Dodaj lek</button>
+        </div>
+      )}
       
-      {/*Sekcja leków aktywnych*/}
-      <div className="mb-8">
-        <button 
-          onClick={() => setIsListActive(!isListActive)}
-          className="w-full flex items-center justify-between mb-4 p-2 -ml-2 rounded-lg hover:bg-slate-100 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-slate-800">Leki w szafce</h2>
-            <span className="bg-slate-200 text-slate-700 py-0.5 px-2.5 rounded-full text-sm font-semibold">
-              {activeMedications.length}
-            </span>
+      {cabinets.length > 0 && (
+        <>
+          <div className="mb-8">
+            <button 
+              onClick={() => setIsListActive(!isListActive)}
+              className="w-full flex items-center justify-between mb-4 p-2 -ml-2 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-bold text-slate-800">Leki w szafce</h2>
+                <span className="bg-slate-200 text-slate-700 py-0.5 px-2.5 rounded-full text-sm font-semibold">{activeMedications.length}</span>
+              </div>
+              <svg className={`w-5 h-5 text-slate-500 transform transition-transform ${isListActive ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            {isListActive && (
+              <div>
+                {activeMedications.length > 0 ? (
+                  activeMedications.map(medication => <MedicationCard key={medication.id_zasobu} medication={medication} isArchived={false} />)
+                ) : (
+                  <div className="bg-white p-8 rounded-xl border border-dashed border-slate-300 text-center text-slate-500">Brak leków w tej szafce.</div>
+                )}
+              </div>
+            )}
           </div>
-          <svg className={`w-5 h-5 text-slate-500 transform transition-transform ${isListActive ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-        </button>
-        
-        {isListActive && (
+
           <div>
-            {activeMedications.length > 0 ? (
-              activeMedications.map(medication => <MedicationCard key={medication.id_zasobu} medication={medication} isArchived={false} />)
-            ) : (
-              <div className="bg-white p-8 rounded-xl border border-dashed border-slate-300 text-center text-slate-500">
-                Brak leków w tej szafce.
+            <button 
+              onClick={() => setShowArchive(!showArchive)}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 p-4 rounded-xl border border-slate-200 flex justify-between items-center transition-colors font-medium"
+            >
+              <div className="flex items-center gap-2">
+                <span>Archiwum</span>
+                <span className="bg-white text-slate-500 py-0.5 px-2 rounded-full text-xs font-bold border border-slate-200">{archivedMedications.length}</span>
+              </div>
+              <svg className={`w-5 h-5 transform transition-transform ${showArchive ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            {showArchive && (
+              <div className="mt-3">
+                {archivedMedications.length > 0 ? (
+                  archivedMedications.map(medication => <MedicationCard key={medication.id_zasobu} medication={medication} isArchived={true} />)
+                ) : (
+                  <div className="p-6 text-center text-slate-400 border border-transparent">Archiwum jest puste.</div>
+                )}
               </div>
             )}
           </div>
-        )}
-      </div>
-
-
-      {/*Sekcja archiwum leków*/}
-      <div>
-        <button 
-          onClick={() => setShowArchive(!showArchive)}
-          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 p-4 rounded-xl border border-slate-200 flex justify-between items-center transition-colors font-medium"
-        >
-          <div className="flex items-center gap-2">
-            <span>Archiwum</span>
-            <span className="bg-white text-slate-500 py-0.5 px-2 rounded-full text-xs font-bold border border-slate-200">
-              {archivedMedications.length}
-            </span>
-          </div>
-          <svg className={`w-5 h-5 transform transition-transform ${showArchive ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-        </button>
-
-        {showArchive && (
-          <div className="mt-3">
-            {archivedMedications.length > 0 ? (
-              archivedMedications.map(medication => <MedicationCard key={medication.id_zasobu} medication={medication} isArchived={true} />)
-            ) : (
-              <div className="p-6 text-center text-slate-400 border border-transparent">
-                Archiwum jest puste.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        </>
+      )}
 
     </div>
   );
