@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
     "@tailwindcss/postcss": "^4.2.2",
+    "papaparse": "^5.5.3",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
