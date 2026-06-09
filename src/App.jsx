@@ -67,7 +67,7 @@ function App() {
           currentView === 'profile' ? (
             <Profile session={session} />
           ) : (
-            <Dashboard />
+            <Dashboard showToast={showToast} />
           )
         )}
       </main>

@@ -19,7 +19,7 @@ const checkExpiration = (dateString) => {
   return 'bg-white border-slate-200 text-slate-800';
 };
 
-const Dashboard = () => {
+const Dashboard = ({ showToast }) => {
   const [cabinets, setCabinets] = useState([]);
   const [medications, setMedications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -98,8 +98,14 @@ const Dashboard = () => {
       setNewCabinetName('');
       setView('list'); 
       fetchCabinets();
+
+      if (showToast) {
+        showToast('Szafka utworzona pomyślnie!', 'success');
+      }
     } else {
-      alert("Błąd: " + (cabinetError?.message || "Błąd"));
+      if (showToast) {
+        showToast('Wystąpił błąd podczas dodawania szafki.', 'error');
+      }
     }
     setIsSubmitting(false);
   };
