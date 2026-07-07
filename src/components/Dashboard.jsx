@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import AddMedication from './AddMedication';
 
 const checkExpiration = (dateString) => {
   const today = new Date();
@@ -170,6 +171,17 @@ const Dashboard = ({ showToast }) => {
       </div>
     );
   }
+  
+  // Wyświetlenie formularza dodawania leku
+  if (view === 'addMedication') {
+    return (
+      <AddMedication 
+        cabinetId={selectedCabinet} 
+        onSuccess={() => setView('list')} 
+        onCancel={() => setView('list')} 
+      />
+    );
+  }
 
   {/*Główna zawartość dashboardu*/}
   return (
@@ -202,7 +214,12 @@ const Dashboard = ({ showToast }) => {
               <button onClick={() => setView('addCabinet')} className="p-2.5 bg-slate-100 rounded-lg">+</button>
             </div>
           </div>
-          <button className="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-medium">+ Dodaj lek</button>
+          <button 
+  onClick={() => setView('addMedication')} 
+  className="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-medium"
+>
+  + Dodaj lek
+</button>
         </div>
       )}
       
