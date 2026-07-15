@@ -10,7 +10,7 @@ const CSV_URL = 'https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/pub
 async function runUpdate() {
   try {
     const response = await fetch(CSV_URL);
-    if (!response.ok) throw new Error(`Błąd pobierania: ${response.statusText}`);
+    if (!response.ok) throw new Error(`Błąd pobierania csv: ${response.statusText}`);
     const csvText = await response.text();
 
     const parsed = Papa.parse(csvText, {
@@ -26,7 +26,7 @@ async function runUpdate() {
       const packageLines = rawPackages.split('\n').map(s => s.trim()).filter(s => s !== '');
       
       let currentEan = null;
-
+      const seenEans = new Set();
       packageLines.forEach(line => {
         const eanMatch = line.match(/^(\d{13,14})/);
         
@@ -35,17 +35,21 @@ async function runUpdate() {
           currentEan = eanMatch[1].replace(/^0+/, ''); 
         } 
         else if (currentEan && line) {
-          mappedData.push({
-            ean: currentEan, 
-            nazwa_leku: row['Nazwa Produktu Leczniczego'],
-            rodzaj_podania: row['Droga podania - Gatunek - Tkanka - Okres karencji'], 
-            dawka: row['Moc'],
-            ilosc_tabletek: line, 
-            postac_farmaceutyczna: row['Postać farmaceutyczna'],
-            substancja_czynna: row['Substancja czynna'],
-            ulotka_url: row['Ulotka'] || null
-          });
+          if (!seenEans.has(currentEan)) {
+            seenEans.add(currentEan); 
+            
+            mappedData.push({
+              ean: currentEan, 
+              nazwa_leku: row['Nazwa Produktu Leczniczego'],
+              rodzaj_podania: row['Droga podania - Gatunek - Tkanka - Okres karencji'], 
+              dawka: row['Moc'],
+              ilosc_tabletek: line, 
+              postac_farmaceutyczna: row['Postać farmaceutyczna'],
+              substancja_czynna: row['Substancja czynna'],
+              ulotka_url: row['Ulotka'] || null
+            });
           currentEan = null; 
+          }
         }
       });
     });
@@ -84,6 +88,8 @@ async function runUpdate() {
     
     console.error(error);
     process.exit(1);
+ 
+ 
   }
 }
 
