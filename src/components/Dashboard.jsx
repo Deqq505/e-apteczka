@@ -179,6 +179,7 @@ const Dashboard = ({ showToast }) => {
         cabinetId={selectedCabinet} 
         onSuccess={() => setView('list')} 
         onCancel={() => setView('list')} 
+        showToast={showToast}
       />
     );
   }

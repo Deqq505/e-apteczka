@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
+import { supabase } from '../supabaseClient';
 
-const AddMedication = ({ cabinetId, onSuccess, onCancel }) => {
+const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
 
   const [ean, setEan] = useState('');
   const [oficjalnaNazwa, setOficjalnaNazwa] = useState('');
   const [dawka, setDawka] = useState('');
-
 
   const [nazwaWlasna, setNazwaWlasna] = useState('');
   const [dataWaznosci, setDataWaznosci] = useState('');
@@ -14,50 +15,119 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel }) => {
   const [jednostka, setJednostka] = useState('sztuki');
   const [status, setStatus] = useState('w szafce');
 
-  const handleSearch = () => {
-    // Miejsce na dodawanie do bazy danych i wyszukiwarkę
+  // Wyszukiwarka po ean lub nazwie leku
+  const handleSearchChange = async (e) => {
+    setSearchQuery(e.target.value);
+
+    if (!e.target.value) {
+      setSuggestions([]);
+      return;
+    }
+
+    const isEan = /^\d+$/.test(e.target.value);
+    
+    let dbQuery = supabase.from('baza_lekow').select('ean, nazwa_leku, dawka').limit(8);
+      
+    if (isEan) {
+      dbQuery = dbQuery.ilike('ean', `${e.target.value}%`);
+    } else {
+      dbQuery = dbQuery.ilike('nazwa_leku', `%${e.target.value}%`);
+    }
+
+    const { data } = await dbQuery;
+    
+    if (data) {
+      setSuggestions(data);
+    }
   };
 
-  const handleCameraScan = () => {
-    // Miejsce na skaner ean
+  // uzupelnianie pól formularza po wybraniu leku z podpowiedzi
+  const handleSelectSuggestion = (lek) => {
+    setEan(lek.ean);
+    setOficjalnaNazwa(lek.nazwa_leku);
+    setDawka(lek.dawka || 'Brak danych');
+    setSearchQuery(lek.nazwa_leku); 
+    setSuggestions([]); 
   };
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    const zapisywanaNazwa = nazwaWlasna ? nazwaWlasna : oficjalnaNazwa;
+
+    // Zapis leku do szafki do bazy danych
+    await supabase.from('zasoby').insert([{
+      id_szafki: cabinetId,
+      id_uzytkownika_dodal: user.id,
+      ean_leku: ean,
+      nazwa_reczna: zapisywanaNazwa,
+      data_waznosci: dataWaznosci,
+      ilosc: ilosc,
+      jednostka: jednostka,
+      status: status
+    }]);
+
+    // Zapis logow aktywności do bazy danych
+    await supabase.from('logi_aktywnosci').insert([{
+      id_uzytkownika: user.id,
+      id_szafki: cabinetId,
+      operacja: 'dodanie',
+      szczegoly: 'Dodano nowy lek: ' + zapisywanaNazwa
+    }]);
+
+    showToast?.('Lek został dodany do szafki!', 'success');
+    onSuccess();
+  };
+
+  // Widok główny dodawania leku
   return (
     <div className="max-w-3xl mx-auto mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm">
       
-      {/* Wyszukiwarka */}
       <div className="p-6 sm:p-8 border-b border-slate-100">
         <h2 className="text-xl font-bold text-slate-800 mb-6">Dodaj lek do szafki</h2>
         
         <div className="flex flex-col sm:flex-row gap-3">
-          <input 
-            type="text" 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900"
-            placeholder="Zeskanuj, wpisz EAN lub nazwę leku..."
-          />
+          <div className="relative flex-1">
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-slate-900"
+              placeholder="Zeskanuj, wpisz EAN lub nazwę leku..."
+            />
+            
+            {/* Wyskakująca lista podpowiedzi leków */}
+            {suggestions.length > 0 && (
+              <div className="absolute z-10 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                {suggestions.map((s) => (
+                  <div 
+                    key={s.ean} 
+                    onClick={() => handleSelectSuggestion(s)}
+                    className="p-4 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors"
+                  >
+                    <div className="font-semibold text-sm text-slate-800">{s.nazwa_leku}</div>
+                    <div className="text-xs text-slate-500 mt-1">EAN: {s.ean} {s.dawka ? `• Dawka: ${s.dawka}` : ''}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button 
             type="button" 
-            onClick={handleCameraScan}
             className="px-5 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
             title="Skanuj kod aparatem"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
           </button>
-          <button 
-            type="button" 
-            onClick={handleSearch}
-            className="px-6 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors shadow-sm whitespace-nowrap"
-          >
-            Szukaj w bazie
-          </button>
         </div>
       </div>
 
       <div className="p-6 sm:p-8">
-        <form className="space-y-8">
-          
+        <form id="addMedicationForm" onSubmit={handleSubmit} className="space-y-8">
+
           {/* Zablokowane dane z bazy */}
           <div>
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -98,7 +168,6 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel }) => {
             </div>
           </div>
 
-          {/* Dane wpisywane przez użytkownika */}
           <div>
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">
               Szczegóły w szafce
@@ -122,6 +191,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel }) => {
                   type="date" 
                   value={dataWaznosci}
                   onChange={(e) => setDataWaznosci(e.target.value)}
+                  required
                   className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 shadow-sm"
                 />
               </div>
@@ -147,6 +217,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel }) => {
                     type="number" 
                     value={ilosc}
                     onChange={(e) => setIlosc(e.target.value)}
+                    required
                     className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 shadow-sm"
                   />
                 </div>
@@ -193,7 +264,8 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel }) => {
           Anuluj
         </button>
         <button 
-          type="button" 
+          type="submit" 
+          form="addMedicationForm"
           className="px-8 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors shadow-sm"
         >
           Zapisz lek
