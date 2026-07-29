@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
+  const [isScanning, setIsScanning] = useState(false);
 
   const [ean, setEan] = useState('');
   const [oficjalnaNazwa, setOficjalnaNazwa] = useState('');
@@ -14,6 +16,40 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
   const [ilosc, setIlosc] = useState('');
   const [jednostka, setJednostka] = useState('sztuki');
   const [status, setStatus] = useState('w szafce');
+
+  // Aparat do skanowania kodów
+  useEffect(() => {
+    let scanner = null;
+    
+    if (isScanning) {
+      setTimeout(() => {
+        scanner = new Html5QrcodeScanner(
+          "reader", 
+          { fps: 10, qrbox: { width: 250, height: 100 } },
+          false
+        );
+
+        scanner.render(
+          (decodedText) => {
+            scanner.clear();
+            setIsScanning(false);
+            showToast?.('Zeskanowano kod!', 'success');
+            handleSearchChange({ target: { value: decodedText } });
+          },
+          (errorMessage) => {
+            showToast?.('Błąd skanowania kodu!', 'error');
+          }
+        );
+      }, 100);
+    }
+
+    return () => {
+      if (scanner) {
+        scanner.clear().catch(e => console.log("Błąd zamykania skanera", e));
+      }
+    };
+  }, [isScanning]);
+
 
   // Wyszukiwarka po ean lub nazwie leku
   const handleSearchChange = async (e) => {
@@ -117,12 +153,28 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
 
           <button 
             type="button" 
+            onClick={() => setIsScanning(true)}
             className="px-5 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
             title="Skanuj kod aparatem"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
           </button>
         </div>
+        
+        {/* Widok kamery */}
+        {isScanning && (
+          <div className="mt-4 p-4 border border-slate-200 rounded-xl bg-slate-50/50">
+            <div className="text-sm font-medium text-slate-700 mb-2">Nakieruj prostokąt na kod kreskowy</div>
+            <div id="reader" className="w-full rounded-lg overflow-hidden border border-slate-300 bg-black"></div>
+            <button 
+              type="button" 
+              onClick={() => setIsScanning(false)}
+              className="mt-3 w-full py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Anuluj i zamknij aparat
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="p-6 sm:p-8">
