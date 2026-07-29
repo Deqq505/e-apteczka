@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,33 +23,37 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
     
     if (isScanning) {
       setTimeout(() => {
-        scanner = new Html5QrcodeScanner(
-          "reader", 
-          { fps: 10, qrbox: { width: 250, height: 100 } },
-          false
-        );
+        scanner = new Html5Qrcode("reader");
 
-        scanner.render(
+        scanner.start(
+          { facingMode: "environment" }, 
+          { fps: 10, qrbox: { width: 250, height: 100 } },
           (decodedText) => {
-            scanner.clear();
-            setIsScanning(false);
-            showToast?.('Zeskanowano kod!', 'success');
-            handleSearchChange({ target: { value: decodedText } });
+            scanner.stop().then(() => {
+              scanner.clear();
+              setIsScanning(false);
+              showToast?.('Zeskanowano kod!', 'success');
+              handleSearchChange({ target: { value: decodedText } });
+            }).catch(err => console.log("Błąd zamykania kamery", err));
           },
           (errorMessage) => {
-            showToast?.('Błąd skanowania kodu!', 'error');
           }
-        );
+        ).catch((err) => {
+          console.log("Brak uprawnień lub problem z aparatem:", err);
+          showToast?.('Nie udało się uruchomić aparatu', 'error');
+          setIsScanning(false);
+        });
       }, 100);
     }
 
     return () => {
       if (scanner) {
-        scanner.clear().catch(e => console.log("Błąd zamykania skanera", e));
+        try {
+          scanner.stop().then(() => scanner.clear()).catch(() => {});
+        } catch (e) {}
       }
     };
   }, [isScanning]);
-
 
   // Wyszukiwarka po ean lub nazwie leku
   const handleSearchChange = async (e) => {
