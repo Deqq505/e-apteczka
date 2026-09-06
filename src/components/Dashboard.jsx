@@ -34,6 +34,35 @@ const Dashboard = ({ showToast }) => {
   const [isListActive, setIsListActive] = useState(true);
   const [showArchive, setShowArchive] = useState(false);
 
+  const [selectedMed, setSelectedMed] = useState(null);
+  const [medDetails, setMedDetails] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Modal szczegołów leku
+  const handleOpenMedModal = async (med) => {
+    setSelectedMed(med);
+    setIsModalOpen(true);
+    setMedDetails(null); 
+
+    if (med.ean_leku) {
+      const { data, error } = await supabase
+        .from('baza_lekow')
+        .select('*')
+        .eq('ean', med.ean_leku)
+        .single();
+        
+      if (data && !error) {
+        setMedDetails(data);
+      }
+    }
+  };
+
+  const handleCloseMedModal = () => {
+    setIsModalOpen(false);
+      setSelectedMed(null);
+      setMedDetails(null);
+  };
+
   //Wypisanie szafek
   const fetchCabinets = async () => {
     setIsLoading(true);
@@ -120,7 +149,10 @@ const Dashboard = ({ showToast }) => {
       : checkExpiration(medication.data_waznosci);
     
     return (
-      <div className={`p-4 border rounded-xl shadow-sm mb-3 flex flex-row justify-between items-center transition-colors ${colors}`}>
+      <div 
+        onClick={() => handleOpenMedModal(medication)}
+        className={`p-4 border rounded-xl shadow-sm mb-3 flex flex-row justify-between items-center transition-colors cursor-pointer hover:shadow-md ${colors}`}
+      >
         <div>
           <h3 className={`text-lg font-semibold ${isArchived ? 'line-through' : ''}`}>
             {medication.nazwa_reczna}
@@ -270,6 +302,120 @@ const Dashboard = ({ showToast }) => {
             )}
           </div>
         </>
+      )}
+
+      {/* Szczegóły leku modal*/}
+      {isModalOpen && selectedMed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40">
+          
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
+            
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">
+                  {selectedMed.nazwa_reczna || 'Nieznany lek'}
+                </h2>
+                <p className="text-sm font-medium text-slate-500 mt-1">EAN: {selectedMed.ean_leku || 'Brak powiązania'}</p>
+              </div>
+              <button 
+                onClick={handleCloseMedModal} 
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            
+            <div className="p-5 sm:p-6">
+              
+              
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Szczegóły w szafce</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Ilość</div>
+                  <div className="font-bold text-slate-800">{selectedMed.ilosc} {selectedMed.jednostka}</div>
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Data ważności</div>
+                  <div className="font-bold text-slate-800">{selectedMed.data_waznosci || 'Brak'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Status</div>
+                  <div className="font-bold text-slate-800 capitalize">{selectedMed.status}</div>
+                </div>
+              </div>
+
+              
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Szczegóły z rejestru</h3>
+              {medDetails ? (
+                <div className="space-y-4 mb-8">
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Oficjalna nazwa</div>
+                    <div className="text-sm font-medium text-slate-800">{medDetails.nazwa_leku || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Substancja czynna</div>
+                    <div className="text-sm font-medium text-slate-800">{medDetails.substancja_czynna || '-'}</div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Dawka</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.dawka || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Postać</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.postac_farmaceutyczna || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Droga podania</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.rodzaj_podania || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Wielkość op.</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.ilosc_tabletek || '-'}</div>
+                    </div>
+                  </div>
+                  
+                  
+                  {medDetails.ulotka_url && (
+                    <div className="pt-3">
+                      <a 
+                        href={medDetails.ulotka_url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="inline-flex items-center justify-center w-full sm:w-auto px-5 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-800 transition-colors shadow-sm gap-2"
+                      >
+                        Pobierz ulotkę (PDF)
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-8 italic">
+                  {selectedMed.ean_leku ? 'Ładowanie szczegółów z rejestru...' : 'Lek dodany bez kodu EAN. Brak powiązania z oficjalną bazą.'}
+                </div>
+              )}
+
+              
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Zdjęcie opakowania
+              </h3>
+              
+              {selectedMed.zdjecie_url ? (
+                <div className="w-full h-48 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden mb-4">
+                  <img src={selectedMed.zdjecie_url} alt="Zdjęcie leku" className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500 mb-4">
+                  Brak zdjęcia leku w szafce.
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
