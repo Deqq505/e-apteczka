@@ -34,6 +34,8 @@ const Dashboard = ({ showToast }) => {
   const [isListActive, setIsListActive] = useState(true);
   const [showArchive, setShowArchive] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+
   const [selectedMed, setSelectedMed] = useState(null);
   const [medDetails, setMedDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -140,8 +142,15 @@ const Dashboard = ({ showToast }) => {
     setIsSubmitting(false);
   };
 
-  const activeMedications = medications.filter(medication => medication.status === 'w szafce');
-  const archivedMedications = medications.filter(medication => medication.status !== 'w szafce');
+  // filtrowanie lekow
+  const activeMedications = medications
+    .filter(medication => medication.status === 'w szafce')
+    .filter(medication => (medication.nazwa_reczna || '').toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const archivedMedications = medications
+    .filter(medication => medication.status !== 'w szafce')
+    .filter(medication => (medication.nazwa_reczna || '').toLowerCase().includes(searchQuery.toLowerCase()));
+
 
   const MedicationCard = ({ medication, isArchived }) => {
     const colors = isArchived 
@@ -258,6 +267,22 @@ const Dashboard = ({ showToast }) => {
       
       {cabinets.length > 0 && (
         <>
+          {/* wyszukiwarka lekow */}
+          <div className="mb-6">
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Wyszukaj lek w szafce..."
+              className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none shadow-sm"
+            />
+            {searchQuery && activeMedications.length === 0 && archivedMedications.length === 0 && (
+              <div className="mt-2 text-red-500 text-sm font-medium pl-1">
+                Brak wyszukiwanego leku w szafce.
+              </div>
+            )}
+          </div>
+
           <div className="mb-8">
             <button 
               onClick={() => setIsListActive(!isListActive)}
