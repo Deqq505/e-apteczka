@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import AddMedication from './AddMedication';
+import CabinetSettings from './CabinetSettings';
 
 const checkExpiration = (dateString) => {
   const today = new Date();
@@ -42,8 +43,15 @@ const Dashboard = ({ showToast }) => {
   // Nasłuchiwanie na logo z Headera
   useEffect(() => {
     const handleResetToHome = () => setView('list');
+    const handleOpenSettings = () => setView('cabinetSettings');
+    
     window.addEventListener('resetToHome', handleResetToHome);
-    return () => window.removeEventListener('resetToHome', handleResetToHome);
+    window.addEventListener('openCabinetSettings', handleOpenSettings);
+    
+    return () => {
+      window.removeEventListener('resetToHome', handleResetToHome);
+      window.removeEventListener('openCabinetSettings', handleOpenSettings);
+    };
   }, []);
 
   // Modal szczegołów leku
@@ -190,6 +198,28 @@ const Dashboard = ({ showToast }) => {
       <div key="view-loading" className="max-w-3xl mx-auto mt-20 text-center text-slate-400 font-medium custom-fade">
         Ładowanie danych z bazy...
       </div>
+    );
+  }
+
+  // Wyświetlenie ustawień szafki
+  if (view === 'cabinetSettings') {
+    if (!selectedCabinet) {
+      return <div className="text-center py-10 custom-fade text-slate-500">Brak wybranej szafki.</div>;
+    }
+    return (
+      <CabinetSettings 
+        key={`settings-${selectedCabinet}`}
+        cabinetId={selectedCabinet} 
+        allCabinets={cabinets}
+        onBack={() => setView('list')} 
+        onUpdate={() => fetchCabinets()} 
+        onDelete={() => { 
+          setSelectedCabinet(''); 
+          setView('list'); 
+          fetchCabinets(); 
+        }} 
+        showToast={showToast} 
+      />
     );
   }
 
