@@ -135,7 +135,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
 
   // Widok główny dodawania leku
   return (
-    <div className="max-w-3xl mx-auto mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm">
+    <div className="max-w-3xl mx-auto mt-6 bg-white rounded-2xl border border-slate-200 shadow-sm custom-fade">
       
       <div className="p-6 sm:p-8 border-b border-slate-100">
         <h2 className="text-xl font-bold text-slate-800 mb-6">Dodaj lek do szafki</h2>
