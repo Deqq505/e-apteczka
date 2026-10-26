@@ -35,7 +35,7 @@ const Profile = ({ session }) => {
   }
 
   return (
-    <div className="max-w-2xl mx-auto mt-8 bg-white p-8 rounded-2xl shadow-sm border border-slate-100 animate-in fade-in duration-300">
+    <div className="max-w-2xl mx-auto mt-8 bg-white p-8 rounded-2xl shadow-sm border border-slate-100 custom-fade">
       <h2 className="text-2xl font-bold text-slate-900 mb-6">Twój profil</h2>
       
       <div className="space-y-4">

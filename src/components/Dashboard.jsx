@@ -29,7 +29,6 @@ const Dashboard = ({ showToast }) => {
   const [newCabinetName, setNewCabinetName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-
   const [selectedCabinet, setSelectedCabinet] = useState('');
   const [isListActive, setIsListActive] = useState(true);
   const [showArchive, setShowArchive] = useState(false);
@@ -39,6 +38,13 @@ const Dashboard = ({ showToast }) => {
   const [selectedMed, setSelectedMed] = useState(null);
   const [medDetails, setMedDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Nasłuchiwanie na logo z Headera
+  useEffect(() => {
+    const handleResetToHome = () => setView('list');
+    window.addEventListener('resetToHome', handleResetToHome);
+    return () => window.removeEventListener('resetToHome', handleResetToHome);
+  }, []);
 
   // Modal szczegołów leku
   const handleOpenMedModal = async (med) => {
@@ -181,7 +187,7 @@ const Dashboard = ({ showToast }) => {
 
   if (isLoading && cabinets.length === 0) {
     return (
-      <div className="max-w-3xl mx-auto mt-20 text-center text-slate-400 font-medium">
+      <div key="view-loading" className="max-w-3xl mx-auto mt-20 text-center text-slate-400 font-medium custom-fade">
         Ładowanie danych z bazy...
       </div>
     );
@@ -190,7 +196,7 @@ const Dashboard = ({ showToast }) => {
   // Wyświetlenie formularza dodawania szafki
   if (view === 'addCabinet') {
     return (
-      <div className="max-w-md mx-auto mt-6 p-6 bg-white rounded-2xl border border-slate-200 shadow-sm">
+      <div key="view-add-cabinet" className="max-w-md mx-auto mt-6 p-6 bg-white rounded-2xl border border-slate-200 shadow-sm custom-fade">
         <h2 className="text-2xl font-bold text-slate-800 mb-2">Nowa szafka</h2>
         <form onSubmit={handleAddCabinet}>
           <div className="mb-6">
@@ -217,6 +223,7 @@ const Dashboard = ({ showToast }) => {
   if (view === 'addMedication') {
     return (
       <AddMedication 
+        key="view-add-medication"
         cabinetId={selectedCabinet} 
         onSuccess={() => setView('list')} 
         onCancel={() => setView('list')} 
@@ -227,7 +234,7 @@ const Dashboard = ({ showToast }) => {
 
   {/*Główna zawartość dashboardu*/}
   return (
-    <div className="max-w-3xl mx-auto mt-6 p-4">
+    <div key="view-main-list" className="max-w-3xl mx-auto mt-6 p-4 custom-fade">
       
       {cabinets.length === 0 ? (
         <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm text-center">
@@ -331,9 +338,9 @@ const Dashboard = ({ showToast }) => {
 
       {/* Szczegóły leku modal*/}
       {isModalOpen && selectedMed && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40">
+        <div key="view-med-modal" className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 custom-fade" onClick={handleCloseMedModal}>
           
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200" onClick={(e) => e.stopPropagation()}>
             
             <div className="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
               <div>

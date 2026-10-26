@@ -54,7 +54,7 @@ const Auth = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto mt-3 bg-white p-8 border border-slate-100 rounded-3xl shadow-xl">
+    <div className="max-w-md mx-auto mt-3 bg-white p-8 border border-slate-100 rounded-3xl shadow-xl custom-fade">
       <h2 className="text-3xl font-bold mb-6 text-center">
         {isLogin ? 'Zaloguj się' : 'Stwórz konto'}
       </h2>
