@@ -4,22 +4,53 @@ import AddMedication from './AddMedication';
 import CabinetSettings from './CabinetSettings';
 import { ChevronDown, X, Image as ImageIcon } from 'lucide-react';
 
-const checkExpiration = (dateString) => {
+const formatQuantity = (quantity, unit) => {
+  const num = parseInt(quantity);
+  if (isNaN(num)) return `${quantity} ${unit}`;
+
+  const pluralRule = new Intl.PluralRules('pl-PL').select(num);
+
+  if (unit === 'sztuki') {
+    if (pluralRule === 'one') return '1 sztuka';
+    if (pluralRule === 'few') return `${quantity} sztuki`;
+    return `${quantity} sztuk`;
+  }
+  
+  if (unit === 'listek') {
+    if (pluralRule === 'one') return '1 listek';
+    if (pluralRule === 'few') return `${quantity} listki`;
+    return `${quantity} listków`;
+  }
+
+  if (unit === 'opakowanie') {
+    if (pluralRule === 'one') return '1 opakowanie';
+    if (pluralRule === 'few') return `${quantity} opakowania`;
+    return `${quantity} opakowań`;
+  }
+
+  return `${quantity} ${unit}`;
+};
+
+const getDiffDays = (dateString) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0); 
   
   const expDate = new Date(dateString);
   expDate.setHours(0, 0, 0, 0);
   
-  const diffDays = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+  return Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+};
 
-  if (diffDays < 0) {
-    return 'bg-red-50 border-red-200 text-red-900';
+const formatDaysLeft = (days) => {
+  if (days === 0) return 'Koniec ważności dzisiaj!';
+  if (days === 1) return 'Został 1 dzień do przeterminowania';
+  
+  const pluralRule = new Intl.PluralRules('pl-PL').select(Math.abs(days));
+  
+  if (pluralRule === 'few') {
+    return `Zostały ${days} dni do przeterminowania`;
   }
-  if (diffDays <= 14) {
-    return 'bg-orange-50 border-orange-200 text-orange-900';
-  }
-  return 'bg-white border-slate-200 text-slate-800';
+  return `Zostało ${days} dni do przeterminowania`;
 };
 
 const Dashboard = ({ showToast }) => {
@@ -168,9 +199,17 @@ const Dashboard = ({ showToast }) => {
 
 
   const MedicationCard = ({ medication, isArchived }) => {
-    const colors = isArchived 
-      ? 'bg-slate-50 border-slate-200 text-slate-500 opacity-70' 
-      : checkExpiration(medication.data_waznosci);
+    const diffDays = getDiffDays(medication.data_waznosci);
+    
+    // Kolory w zależności od daty waznosci i statusu
+    let colors = 'bg-white border-slate-200 text-slate-800';
+    if (isArchived) {
+      colors = 'bg-slate-50 border-slate-200 text-slate-500 opacity-70';
+    } else if (diffDays < 0) {
+      colors = 'bg-red-50 border-red-200 text-red-900';
+    } else if (diffDays <= 14) {
+      colors = 'bg-orange-50 border-orange-200 text-orange-900';
+    }
     
     return (
       <div 
@@ -183,12 +222,24 @@ const Dashboard = ({ showToast }) => {
           </h3>
           {isArchived && <p className="text-[10px] uppercase font-bold opacity-50 tracking-tight">{medication.status}</p>}
           <p className="text-sm mt-0.5 opacity-80">
-            Zostało: <span className="font-medium">{medication.ilosc} {medication.jednostka}</span>
+            Zostało: <span className="font-medium">{formatQuantity(medication.ilosc, medication.jednostka)}</span>
           </p>
         </div>
-        <div className="text-right">
+        <div className="text-right flex flex-col items-end">
           <span className="block text-xs uppercase tracking-wider opacity-60 mb-0.5">Ważność</span>
           <span className="font-bold">{medication.data_waznosci}</span>
+          
+          {/* Wyswietlanie ile zostalo dni waznosci */}
+          {!isArchived && diffDays < 0 && (
+            <span className="text-xs font-semibold text-red-700 bg-red-100/50 px-1.5 py-0.5 rounded mt-1">
+              Przeterminowany od {Math.abs(diffDays)} {Math.abs(diffDays) === 1 ? 'dnia' : 'dni'}
+            </span>
+          )}
+          {!isArchived && diffDays >= 0 && diffDays <= 14 && (
+            <span className="text-xs font-semibold text-orange-700 bg-orange-100/50 px-1.5 py-0.5 rounded mt-1">
+              {formatDaysLeft(diffDays)}
+            </span>
+          )}
         </div>
       </div>
     );
@@ -396,7 +447,7 @@ const Dashboard = ({ showToast }) => {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 bg-slate-50 p-4 rounded-xl border border-slate-100">
                 <div>
                   <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Ilość</div>
-                  <div className="font-bold text-slate-800">{selectedMed.ilosc} {selectedMed.jednostka}</div>
+                  <div className="font-bold text-slate-800">{formatQuantity(selectedMed.ilosc, selectedMed.jednostka)}</div>
                 </div>
                 <div className="sm:col-span-2">
                   <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Data ważności</div>
