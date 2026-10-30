@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Camera, Database, CameraIcon } from 'lucide-react';
 
 const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -173,7 +174,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
             className="px-5 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
             title="Skanuj kod aparatem"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            <Camera className="w-5 h-5" />
           </button>
         </div>
         
@@ -199,7 +200,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
           {/* Zablokowane dane z bazy */}
           <div>
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <Database className="w-4 h-4 text-slate-400" />
               Dane z rejestru (zablokowane)
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 bg-slate-50/50 p-5 rounded-xl border border-slate-100">
@@ -309,7 +310,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
                 <label className="block text-sm font-medium text-slate-700 mb-2">Zdjęcie opakowania</label>
                 <div className="flex items-center gap-3">
                   <label className="cursor-pointer px-4 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl font-medium transition-colors shadow-sm flex items-center gap-2">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <CameraIcon className="w-4 h-4" />
                     <span>Zrób lub wgraj zdjęcie</span>
                     <input type="file" className="hidden" accept="image/*" capture="environment" />
                   </label>
