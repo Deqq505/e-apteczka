@@ -69,6 +69,7 @@ const Dashboard = ({ showToast }) => {
   const [selectedMed, setSelectedMed] = useState(null);
   const [medDetails, setMedDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [medToDelete, setMedToDelete] = useState(null);
 
   const { register: registerCabinet, handleSubmit: handleCabinetSubmit, reset: resetCabinet, formState: { errors: cabinetErrors, isSubmitting: isCabinetSubmitting } } = useForm();
 
@@ -107,8 +108,72 @@ const Dashboard = ({ showToast }) => {
 
   const handleCloseMedModal = () => {
     setIsModalOpen(false);
-      setSelectedMed(null);
-      setMedDetails(null);
+    setSelectedMed(null);
+    setMedDetails(null);
+    setMedToDelete(null);
+  };
+
+  // Zmiana statusu i przenoszenie leku
+  const changeMedicationStatus = async (newStatus) => {
+    if (!selectedMed || selectedMed.status === newStatus) return;
+
+    const { error } = await supabase
+      .from('zasoby')
+      .update({ status: newStatus })
+      .eq('id_zasobu', selectedMed.id_zasobu);
+
+    if (!error) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('logi_aktywnosci').insert([{
+          id_uzytkownika: user.id,
+          id_szafki: selectedCabinet,
+          operacja: 'edycja',
+          szczegoly: `Zmieniono status leku "${selectedMed.nazwa_reczna}" na "${newStatus}"`
+        }]);
+      }
+
+      setMedications(prev => prev.map(med => 
+        med.id_zasobu === selectedMed.id_zasobu ? { ...med, status: newStatus } : med
+      ));
+
+      if (showToast) {
+        showToast(newStatus === 'w szafce' ? 'Lek przywrócony do szafki' : `Lek przeniesiony do archiwum (${newStatus})`, 'success');
+      }
+      handleCloseMedModal();
+    } else {
+      if (showToast) showToast('Wystąpił błąd przy zmianie statusu', 'error');
+    }
+  };
+  
+  //usuwanie leku z bazy
+  const confirmDeleteMedication = async () => {
+    if (!medToDelete) return;
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (user) {
+      await supabase.from('logi_aktywnosci').insert([{
+        id_uzytkownika: user.id,
+        id_szafki: selectedCabinet,
+        operacja: 'usuniecie',
+        szczegoly: `Usunięto trwale lek z bazy: "${medToDelete.nazwa_reczna}"`
+      }]);
+    }
+
+    const { error } = await supabase
+      .from('zasoby')
+      .delete()
+      .eq('id_zasobu', medToDelete.id_zasobu);
+
+    if (!error) {
+      setMedications(prev => prev.filter(med => med.id_zasobu !== medToDelete.id_zasobu));
+      if (showToast) showToast('Lek został trwale usunięty', 'success');
+      handleCloseMedModal(); 
+    } else {
+      if (showToast) showToast('Wystąpił błąd przy usuwaniu leku', 'error');
+      setMedToDelete(null);
+    }
   };
 
   //Wypisanie szafek
@@ -423,7 +488,7 @@ const Dashboard = ({ showToast }) => {
           
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200" onClick={(e) => e.stopPropagation()}>
             
-            <div className="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50 shrink-0">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">
                   {selectedMed.nazwa_reczna || 'Nieznany lek'}
@@ -439,8 +504,7 @@ const Dashboard = ({ showToast }) => {
             </div>
 
             
-            <div className="p-5 sm:p-6">
-              
+            <div className="p-5 sm:p-6 overflow-y-auto">
               
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Szczegóły w szafce</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -525,7 +589,56 @@ const Dashboard = ({ showToast }) => {
                   Brak zdjęcia leku w szafce.
                 </div>
               )}
+            </div>
 
+            {/* dolna stopka  */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
+              <button 
+                onClick={() => setMedToDelete(selectedMed)}
+                className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-200 text-red-600 hover:bg-red-50 text-sm font-medium rounded-xl transition-colors shadow-sm"
+              >
+                Usuń lek
+              </button>
+              
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:block">Zmień status:</span>
+                <select 
+                  value={selectedMed.status}
+                  onChange={(e) => changeMedicationStatus(e.target.value)}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-300 text-slate-800 text-sm font-medium rounded-xl outline-none cursor-pointer focus:ring-2 focus:ring-slate-900 shadow-sm"
+                >
+                  <option value="w szafce">w szafce</option>
+                  <option value="zuzyty">zużyty</option>
+                  <option value="przeterminowany">przeterminowany</option>
+                  <option value="wyrzucony">wyrzucony</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {medToDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 custom-fade" onClick={() => setMedToDelete(null)}>
+          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Usunąć lek?</h3>
+            <p className="text-slate-500 text-sm mb-6">
+              Czy na pewno chcesz trwale usunąć ten lek z bazy? Zniknie on również z archiwum. Tej operacji nie można cofnąć.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setMedToDelete(null)} 
+                className="flex-1 px-4 py-3 border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Anuluj
+              </button>
+              <button 
+                onClick={confirmDeleteMedication} 
+                className="flex-1 px-4 py-3 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-colors"
+              >
+                Tak, usuń
+              </button>
             </div>
           </div>
         </div>
