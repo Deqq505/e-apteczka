@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { useForm } from 'react-hook-form';
 
 const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, showToast }) => {
   const [cabinet, setCabinet] = useState(null);
   const [ownerName, setOwnerName] = useState('');
   const [loading, setLoading] = useState(true);
-  
-  const [newName, setNewName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const { register, handleSubmit, setError, reset, formState: { errors, isSubmitting } } = useForm({
+    defaultValues: { newName: '' }
+  });
 
   useEffect(() => {
     const pobierzDane = async () => {
@@ -23,7 +24,7 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
 
       if (daneSzafki && !cabError) {
         setCabinet(daneSzafki);
-        setNewName(daneSzafki.nazwa_szafki);
+        reset({ newName: daneSzafki.nazwa_szafki });
         
         const { data: user } = await supabase
           .from('uzytkownicy')
@@ -41,16 +42,18 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
     };
 
     if (cabinetId) pobierzDane();
-  }, [cabinetId]);
+  }, [cabinetId, reset]);
 
-  const handleZapisz = async () => {
+  const onSubmit = async (data) => {
+    const { newName } = data;
+
     if (!newName.trim()) {
-      if(showToast) showToast('Nazwa szafki nie może być pusta!', 'error');
+      setError('newName', { type: 'manual', message: 'Nazwa szafki nie może być pusta!' });
       return;
     }
     
     if (newName === cabinet.nazwa_szafki) {
-      if(showToast) showToast('Szafka ma już taką nazwę!', 'error');
+      setError('newName', { type: 'manual', message: 'Szafka ma już taką nazwę!' });
       return;
     }
 
@@ -59,11 +62,9 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
     );
 
     if (czyIstnieje) {
-      if(showToast) showToast('Szafka o tej nazwie już istnieje!', 'error');
+      setError('newName', { type: 'manual', message: 'Szafka o tej nazwie już istnieje!' });
       return;
     }
-    
-    setIsSaving(true);
     
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -87,8 +88,6 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
     } else {
       if(showToast) showToast('Wystąpił błąd przy zapisie', 'error');
     }
-    
-    setIsSaving(false);
   };
 
   const potwierdzUsuniecie = async () => {
@@ -140,24 +139,24 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
 
         <div className="space-y-4">
           
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
+          <form onSubmit={handleSubmit(onSubmit)} className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col sm:flex-row gap-3 items-start" noValidate>
+            <div className="flex-1 w-full">
               <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Nazwa szafki</span>
               <input 
                 type="text" 
-                value={newName} 
-                onChange={(e) => setNewName(e.target.value)} 
-                className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
+                {...register("newName", { required: "Nazwa szafki nie może być pusta!" })}
+                className={`w-full px-4 py-2.5 bg-white border ${errors.newName ? 'border-red-500' : 'border-slate-200'} rounded-lg outline-none focus:ring-2 ${errors.newName ? 'focus:ring-red-500' : 'focus:ring-slate-900'}`}
               />
+              {errors.newName && <p className="text-red-500 text-xs font-medium mt-1 pl-1">{errors.newName.message}</p>}
             </div>
             <button 
-              onClick={handleZapisz}
-              disabled={isSaving}
-              className="mt-6 sm:mt-0 self-end px-5 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
+              type="submit"
+              disabled={isSubmitting}
+              className="mt-6 sm:mt-6 self-start px-5 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
             >
-              {isSaving ? 'Zapisywanie...' : 'Zapisz'}
+              {isSubmitting ? 'Zapisywanie...' : 'Zapisz'}
             </button>
-          </div>
+          </form>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">

@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import AddMedication from './AddMedication';
 import CabinetSettings from './CabinetSettings';
 import { ChevronDown, X, Image as ImageIcon } from 'lucide-react';
+import { useForm } from 'react-hook-form';
 
 const formatQuantity = (quantity, unit) => {
   const num = parseInt(quantity);
@@ -59,9 +60,6 @@ const Dashboard = ({ showToast }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const [view, setView] = useState('list');
-  const [newCabinetName, setNewCabinetName] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [selectedCabinet, setSelectedCabinet] = useState('');
   const [isListActive, setIsListActive] = useState(true);
   const [showArchive, setShowArchive] = useState(false);
@@ -71,6 +69,8 @@ const Dashboard = ({ showToast }) => {
   const [selectedMed, setSelectedMed] = useState(null);
   const [medDetails, setMedDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const { register: registerCabinet, handleSubmit: handleCabinetSubmit, reset: resetCabinet, formState: { errors: cabinetErrors, isSubmitting: isCabinetSubmitting } } = useForm();
 
   // Nasłuchiwanie na logo z Headera
   useEffect(() => {
@@ -154,18 +154,16 @@ const Dashboard = ({ showToast }) => {
     fetchMedications();
   }, [selectedCabinet, view]);
 
-
-  const handleAddCabinet = async (e) => {
-    e.preventDefault();
-    if (!newCabinetName.trim()) return;
-    setIsSubmitting(true);
-    // Dodanie szafki do bazy danych
+  // Dodawanie szafki do bazy danych
+  const handleAddCabinet = async (data) => {
+    const { newCabinetName } = data;
     const { data: { user } } = await supabase.auth.getUser();
     const { data: cabinetData, error: cabinetError } = await supabase
       .from('szafki')
       .insert([{ nazwa_szafki: newCabinetName, id_wlasciciela: user.id }])
       .select();
-    // Dodanie logu aktywności do bazy danych
+    
+    //dodanie logu aktywności do bazy danych
     if (!cabinetError && cabinetData && cabinetData[0]) {
       await supabase.from('logi_aktywnosci').insert([{
         id_uzytkownika: user.id,
@@ -173,7 +171,7 @@ const Dashboard = ({ showToast }) => {
         operacja: 'dodanie', 
         szczegoly: `Utworzono nową szafkę: ${newCabinetName}`
       }]);
-      setNewCabinetName('');
+      resetCabinet();
       setView('list'); 
       fetchCabinets();
 
@@ -185,7 +183,6 @@ const Dashboard = ({ showToast }) => {
         showToast('Wystąpił błąd podczas dodawania szafki.', 'error');
       }
     }
-    setIsSubmitting(false);
   };
 
   // filtrowanie lekow
@@ -280,21 +277,23 @@ const Dashboard = ({ showToast }) => {
     return (
       <div key="view-add-cabinet" className="max-w-md mx-auto mt-6 p-6 bg-white rounded-2xl border border-slate-200 shadow-sm custom-fade">
         <h2 className="text-2xl font-bold text-slate-800 mb-2">Nowa szafka</h2>
-        <form onSubmit={handleAddCabinet}>
+        <form onSubmit={handleCabinetSubmit(handleAddCabinet)} noValidate>
           <div className="mb-6">
             <input 
               autoFocus
               type="text" 
-              value={newCabinetName}
-              onChange={(e) => setNewCabinetName(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"
+              {...registerCabinet("newCabinetName", { 
+                required: "Podaj nazwę szafki",
+                validate: value => value.trim() !== '' || "Podaj nazwę szafki"
+              })}
+              className={`w-full px-4 py-3 bg-slate-50 border ${cabinetErrors.newCabinetName ? 'border-red-500 focus:ring-2 focus:ring-red-500' : 'border-slate-200'} rounded-xl outline-none`}
               placeholder="Nazwa szafki..."
-              required
             />
+            {cabinetErrors.newCabinetName && <p className="text-red-500 text-xs font-medium mt-1 pl-1">{cabinetErrors.newCabinetName.message}</p>}
           </div>
           <div className="flex gap-3">
-            <button type="button" onClick={() => setView('list')} className="flex-1 px-4 py-3 border rounded-xl">Anuluj</button>
-            <button type="submit" disabled={isSubmitting} className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-xl">Utwórz</button>
+            <button type="button" onClick={() => { setView('list'); resetCabinet(); }} className="flex-1 px-4 py-3 border rounded-xl">Anuluj</button>
+            <button type="submit" disabled={isCabinetSubmitting} className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-xl disabled:opacity-50">Utwórz</button>
           </div>
         </form>
       </div>
