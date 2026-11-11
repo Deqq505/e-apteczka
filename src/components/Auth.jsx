@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { useForm } from 'react-hook-form';
+import { Turnstile } from '@marsidev/react-turnstile';
 
 const Auth = () => {
   const [view, setView] = useState('login');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const turnstileRef = useRef();
 
   const { register, handleSubmit, watch, reset, formState: { errors, isSubmitting } } = useForm();
   
@@ -41,7 +44,11 @@ const Auth = () => {
 
     try {
       if (view === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+        const { error } = await supabase.auth.signInWithPassword({ 
+          email: data.email, 
+          password: data.password,
+          options: { captchaToken }
+        });
         if (error) throw new Error('Nieprawidłowy email lub hasło.');
         
       } else if (view === 'register') {
@@ -50,18 +57,22 @@ const Auth = () => {
         const { error } = await supabase.auth.signUp({
           email: data.email,
           password: data.password,
-          options: { data: { imie: data.imie, nazwisko: data.nazwisko } }
+          options: { 
+            data: { imie: data.imie, nazwisko: data.nazwisko },
+            captchaToken 
+          }
         });
         
         if (error) throw error;
         
         setSuccessMsg('Konto utworzone! Potwierdź rejestrację na swoim mailu.');
         reset();
-        setTimeout(() => setView('login'), 3000);
+        setTimeout(() => switchView('login'), 3000);
         
       } else if (view === 'reset') {
         const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
           redirectTo: window.location.origin, 
+          captchaToken
         });
         
         if (error) throw error;
@@ -89,10 +100,12 @@ const Auth = () => {
 
         setSuccessMsg('Hasło zostało zmienione! Zaloguj się nowym hasłem.');
         reset();
-        setTimeout(() => setView('login'), 4000);
+        setTimeout(() => switchView('login'), 4000);
       }
     } catch (err) {
       setErrorMsg(err.message);
+      if (turnstileRef.current) turnstileRef.current.reset();
+      setCaptchaToken(null);
     }
   };
 
@@ -100,6 +113,7 @@ const Auth = () => {
     setView(newView);
     setErrorMsg('');
     setSuccessMsg('');
+    setCaptchaToken(null);
     reset(); 
   };
 
@@ -208,6 +222,20 @@ const Auth = () => {
           </div>
         )}
 
+        {/* widget captcha */}
+        {view !== 'update_password' && (
+          <div className="mt-2 flex justify-center">
+            <Turnstile
+              ref={turnstileRef}
+              siteKey={import.meta.env.VITE_PUBLIC_TURNSTILE_SITE_KEY}
+              onSuccess={(token) => setCaptchaToken(token)}
+              onError={() => setCaptchaToken(null)}
+              onExpire={() => setCaptchaToken(null)}
+              options={{ theme: 'light' }}
+            />
+          </div>
+        )}
+
         {view === 'login' && (
           <div className="text-right">
             <button type="button" onClick={() => switchView('reset')} className="text-xs font-bold text-slate-500 hover:text-black">
@@ -218,7 +246,7 @@ const Auth = () => {
 
         <button 
           type="submit" 
-          disabled={isSubmitting || ((view === 'register' || view === 'update_password') && !isPasswordStrong)} 
+          disabled={isSubmitting || ((view === 'register' || view === 'update_password') && !isPasswordStrong) || (!captchaToken && view !== 'update_password')} 
           className="mt-2 bg-black text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition-colors disabled:bg-slate-300"
         >
           {isSubmitting ? 'Przetwarzanie...' : view === 'login' ? 'Zaloguj się' : view === 'register' ? 'Załóż konto' : view === 'reset' ? 'Wyślij link resetujący' : 'Zapisz nowe hasło'}
