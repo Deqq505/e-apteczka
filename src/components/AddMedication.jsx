@@ -2,21 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Camera, Database, CameraIcon } from 'lucide-react';
+import { useForm } from 'react-hook-form';
 
 const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
 
-  const [ean, setEan] = useState('');
-  const [oficjalnaNazwa, setOficjalnaNazwa] = useState('');
-  const [dawka, setDawka] = useState('');
-
-  const [nazwaWlasna, setNazwaWlasna] = useState('');
-  const [dataWaznosci, setDataWaznosci] = useState('');
-  const [ilosc, setIlosc] = useState('');
-  const [jednostka, setJednostka] = useState('sztuki');
-  const [status, setStatus] = useState('w szafce');
+  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm({
+    defaultValues: {
+      ean: '',
+      oficjalnaNazwa: '',
+      dawka: '',
+      ilosc_tabletek: '',
+      nazwaWlasna: '',
+      dataWaznosci: '',
+      ilosc: '',
+      jednostka: 'sztuki',
+      status: 'w szafce'
+    }
+  });
 
   // Aparat do skanowania kodów
   useEffect(() => {
@@ -44,8 +49,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
               showToast?.('Zeskanowano kod!', 'success');
               
               handleSearchChange({ target: { value: decodedText } });
-
-              setEan(decodedText);
+              setValue('ean', decodedText, { shouldValidate: true });
               
             }).catch(err => console.log("Błąd zamykania kamery", err));
           },
@@ -79,7 +83,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
 
     const isEan = /^\d+$/.test(e.target.value);
     
-    let dbQuery = supabase.from('baza_lekow').select('ean, nazwa_leku, dawka').limit(8);
+    let dbQuery = supabase.from('baza_lekow').select('ean, nazwa_leku, dawka, ilosc_tabletek').limit(8);
       
     if (isEan) {
       dbQuery = dbQuery.ilike('ean', `${e.target.value}%`);
@@ -96,30 +100,29 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
 
   // uzupelnianie pól formularza po wybraniu leku z podpowiedzi
   const handleSelectSuggestion = (lek) => {
-    setEan(lek.ean);
-    setOficjalnaNazwa(lek.nazwa_leku);
-    setDawka(lek.dawka || 'Brak danych');
+    setValue('ean', lek.ean);
+    setValue('oficjalnaNazwa', lek.nazwa_leku);
+    setValue('dawka', lek.dawka || 'Brak danych');
+    setValue('ilosc_tabletek', lek.ilosc_tabletek || 'Brak danych');
     setSearchQuery(lek.nazwa_leku); 
     setSuggestions([]); 
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
+  const onSubmit = async (data) => {
     const { data: { user } } = await supabase.auth.getUser();
     
-    const zapisywanaNazwa = nazwaWlasna ? nazwaWlasna : oficjalnaNazwa;
+    const zapisywanaNazwa = data.nazwaWlasna ? data.nazwaWlasna : data.oficjalnaNazwa;
 
     // Zapis leku do szafki do bazy danych
     await supabase.from('zasoby').insert([{
       id_szafki: cabinetId,
       id_uzytkownika_dodal: user.id,
-      ean_leku: ean,
+      ean_leku: data.ean,
       nazwa_reczna: zapisywanaNazwa,
-      data_waznosci: dataWaznosci,
-      ilosc: ilosc,
-      jednostka: jednostka,
-      status: status
+      data_waznosci: data.dataWaznosci,
+      ilosc: data.ilosc,
+      jednostka: data.jednostka,
+      status: data.status
     }]);
 
     // Zapis logow aktywności do bazy danych
@@ -161,7 +164,11 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
                     className="p-4 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors"
                   >
                     <div className="font-semibold text-sm text-slate-800">{s.nazwa_leku}</div>
-                    <div className="text-xs text-slate-500 mt-1">EAN: {s.ean} {s.dawka ? `• Dawka: ${s.dawka}` : ''}</div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      EAN: {s.ean}
+                      {s.dawka && ` • Dawka: ${s.dawka}`}
+                      {s.ilosc_tabletek && ` • Ilość tabletek: ${s.ilosc_tabletek}`}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -195,21 +202,27 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
       </div>
 
       <div className="p-6 sm:p-8">
-        <form id="addMedicationForm" onSubmit={handleSubmit} className="space-y-8">
+        <form id="addMedicationForm" onSubmit={handleSubmit(onSubmit)} className="space-y-8" noValidate>
 
           {/* Zablokowane dane z bazy */}
           <div>
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Database className="w-4 h-4 text-slate-400" />
-              Dane z rejestru (zablokowane)
-            </h3>
+            <div className="mb-4">
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Database className="w-4 h-4 text-slate-400" />
+                Dane z rejestru (zablokowane)
+              </h3>
+              <p className="text-xs text-slate-500">
+                Wypełniane automatycznie po wybraniu leku. Brak możliwości edycji.
+              </p>
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 bg-slate-50/50 p-5 rounded-xl border border-slate-100">
               <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">KOD EAN</label>
                 <input 
                   type="text" 
-                  value={ean}
                   readOnly
+                  {...register("ean")}
                   className="w-full px-4 py-2.5 bg-slate-100/50 border border-slate-200 text-slate-500 rounded-lg outline-none cursor-not-allowed"
                   placeholder="Uzupełni się automatycznie..."
                 />
@@ -218,18 +231,28 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
                 <label className="block text-xs font-semibold text-slate-500 mb-1">OFICJALNA NAZWA LEKU</label>
                 <input 
                   type="text" 
-                  value={oficjalnaNazwa}
                   readOnly
+                  {...register("oficjalnaNazwa")}
                   className="w-full px-4 py-2.5 bg-slate-100/50 border border-slate-200 text-slate-500 rounded-lg outline-none cursor-not-allowed"
                   placeholder="Uzupełni się automatycznie..."
                 />
               </div>
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-xs font-semibold text-slate-500 mb-1">DAWKA / MOC</label>
                 <input 
                   type="text" 
-                  value={dawka}
                   readOnly
+                  {...register("dawka")}
+                  className="w-full px-4 py-2.5 bg-slate-100/50 border border-slate-200 text-slate-500 rounded-lg outline-none cursor-not-allowed"
+                  placeholder="Uzupełni się automatycznie..."
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">WIELKOŚĆ OPAKOWANIA</label>
+                <input 
+                  type="text" 
+                  readOnly
+                  {...register("ilosc_tabletek")}
                   className="w-full px-4 py-2.5 bg-slate-100/50 border border-slate-200 text-slate-500 rounded-lg outline-none cursor-not-allowed"
                   placeholder="Uzupełni się automatycznie..."
                 />
@@ -247,8 +270,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nazwa własna / Notatka (opcjonalnie)</label>
                 <input 
                   type="text" 
-                  value={nazwaWlasna}
-                  onChange={(e) => setNazwaWlasna(e.target.value)}
+                  {...register("nazwaWlasna")}
                   className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 shadow-sm"
                   placeholder="np. Moje tabletki na ból głowy"
                 />
@@ -258,18 +280,16 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Data ważności *</label>
                 <input 
                   type="date" 
-                  value={dataWaznosci}
-                  onChange={(e) => setDataWaznosci(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 shadow-sm"
+                  {...register("dataWaznosci", { required: "Wybierz datę ważności" })}
+                  className={`w-full px-4 py-3 bg-white border ${errors.dataWaznosci ? 'border-red-500' : 'border-slate-300'} rounded-xl outline-none focus:ring-2 ${errors.dataWaznosci ? 'focus:ring-red-500' : 'focus:ring-slate-900'} shadow-sm`}
                 />
+                {errors.dataWaznosci && <p className="text-red-500 text-xs font-medium mt-1 pl-1">{errors.dataWaznosci.message}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Status *</label>
                 <select 
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
+                  {...register("status")}
                   className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 shadow-sm"
                 >
                   <option value="w szafce">w szafce</option>
@@ -284,17 +304,15 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
                   <label className="block text-sm font-medium text-slate-700 mb-1">Ilość *</label>
                   <input 
                     type="number" 
-                    value={ilosc}
-                    onChange={(e) => setIlosc(e.target.value)}
-                    required
-                    className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 shadow-sm"
+                    {...register("ilosc", { required: "Wpisz ilość" })}
+                    className={`w-full px-4 py-3 bg-white border ${errors.ilosc ? 'border-red-500' : 'border-slate-300'} rounded-xl outline-none focus:ring-2 ${errors.ilosc ? 'focus:ring-red-500' : 'focus:ring-slate-900'} shadow-sm`}
                   />
+                  {errors.ilosc && <p className="text-red-500 text-xs font-medium mt-1 pl-1">{errors.ilosc.message}</p>}
                 </div>
                 <div className="flex-1">
                   <label className="block text-sm font-medium text-slate-700 mb-1">Jednostka *</label>
                   <select 
-                    value={jednostka}
-                    onChange={(e) => setJednostka(e.target.value)}
+                    {...register("jednostka")}
                     className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-slate-900 shadow-sm"
                   >
                     <option value="sztuki">sztuki</option>
@@ -335,9 +353,10 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
         <button 
           type="submit" 
           form="addMedicationForm"
-          className="px-8 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors shadow-sm"
+          disabled={isSubmitting}
+          className="px-8 py-3 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 shadow-sm"
         >
-          Zapisz lek
+          {isSubmitting ? 'Zapisywanie...' : 'Zapisz lek'}
         </button>
       </div>
     </div>
