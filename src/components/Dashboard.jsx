@@ -183,10 +183,11 @@ const Dashboard = ({ showToast }) => {
     
     if (!user) return;
 
+    // Pobieramy szafki - polityki RLS (Widzisz domy, do których należysz) same zadbają o przefiltrowanie
     const { data, error } = await supabase
       .from('szafki')
       .select('*')
-      .eq('id_wlasciciela', user.id);
+      .order('data_utworzenia', { ascending: false });
 
     if (!error && data) {
       setCabinets(data);
