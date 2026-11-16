@@ -183,10 +183,11 @@ const Dashboard = ({ showToast }) => {
     
     if (!user) return;
 
+    // Pobieramy szafki - polityki RLS (Widzisz domy, do których należysz) same zadbają o przefiltrowanie
     const { data, error } = await supabase
       .from('szafki')
       .select('*')
-      .eq('id_wlasciciela', user.id);
+      .order('data_utworzenia', { ascending: false });
 
     if (!error && data) {
       setCabinets(data);
@@ -202,7 +203,6 @@ const Dashboard = ({ showToast }) => {
   }, []);
   
 //Wypisanie leków z szafki
-  useEffect(() => {
     const fetchMedications = async () => {
       if (!selectedCabinet || view !== 'list') return; 
 
@@ -216,7 +216,19 @@ const Dashboard = ({ showToast }) => {
       }
     };
 
+  // nasłuchiwanie realtime
+  useEffect(() => {
     fetchMedications();
+
+    if (!selectedCabinet) return;
+
+    const channel = supabase.channel('db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'zasoby', filter: `id_szafki=eq.${selectedCabinet}` }, fetchMedications)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'szafki' }, fetchCabinets)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'uprawnienia' }, fetchCabinets)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [selectedCabinet, view]);
 
   // Dodawanie szafki do bazy danych

@@ -7,41 +7,59 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
   const [ownerName, setOwnerName] = useState('');
   const [loading, setLoading] = useState(true);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [sharedUsers, setSharedUsers] = useState([]);
+  const [inviteEmail, setInviteEmail] = useState('');
 
   const { register, handleSubmit, setError, reset, formState: { errors, isSubmitting } } = useForm({
     defaultValues: { newName: '' }
   });
 
+  const fetchSharedUsers = async () => {
+    const { data } = await supabase
+      .from('uprawnienia')
+      .select('id_uzytkownika, uzytkownicy(id_uzytkownika, imie, nazwisko, email)')
+      .eq('id_szafki', cabinetId);
+
+    if (data) {
+      setSharedUsers(data.map(item => item.uzytkownicy).filter(Boolean));
+    }
+  };
+
   useEffect(() => {
-    const pobierzDane = async () => {
+    const fetchCabinetData = async () => {
       setLoading(true);
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
       
-      const { data: daneSzafki, error: cabError } = await supabase
+      const { data: cabinetData, error: cabError } = await supabase
         .from('szafki')
         .select('*')
         .eq('id_szafki', cabinetId)
         .single();
 
-      if (daneSzafki && !cabError) {
-        setCabinet(daneSzafki);
-        reset({ newName: daneSzafki.nazwa_szafki });
+      if (cabinetData && !cabError) {
+        setCabinet(cabinetData);
+        reset({ newName: cabinetData.nazwa_szafki });
+        
+        const isCurrentUserOwner = currentUser?.id === cabinetData.id_wlasciciela;
+        setIsOwner(isCurrentUserOwner);
         
         const { data: user } = await supabase
           .from('uzytkownicy')
           .select('imie, nazwisko')
-          .eq('id_uzytkownika', daneSzafki.id_wlasciciela)
+          .eq('id_uzytkownika', cabinetData.id_wlasciciela)
           .single();
           
-        if (user) {
-          setOwnerName(`${user.imie} ${user.nazwisko}`);
-        } else {
-          setOwnerName('Brak danych');
+        setOwnerName(user ? `${user.imie} ${user.nazwisko}` : 'Brak danych');
+
+        if (isCurrentUserOwner) {
+          await fetchSharedUsers();
         }
       }
       setLoading(false);
     };
 
-    if (cabinetId) pobierzDane();
+    if (cabinetId) fetchCabinetData();
   }, [cabinetId, reset]);
 
   const onSubmit = async (data) => {
@@ -57,11 +75,11 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
       return;
     }
 
-    const czyIstnieje = allCabinets.find(
+    const nameExists = allCabinets.find(
       c => c.nazwa_szafki.toLowerCase() === newName.toLowerCase() && c.id_szafki !== cabinetId
     );
 
-    if (czyIstnieje) {
+    if (nameExists) {
       setError('newName', { type: 'manual', message: 'Szafka o tej nazwie już istnieje!' });
       return;
     }
@@ -90,7 +108,94 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
     }
   };
 
-  const potwierdzUsuniecie = async () => {
+  const handleInviteUser = async (e) => {
+    e.preventDefault();
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) return;
+
+    const { data: foundUser } = await supabase
+      .from('uzytkownicy')
+      .select('id_uzytkownika, email')
+      .ilike('email', email)
+      .single();
+
+    if (!foundUser) {
+      if (showToast) showToast('Nie znaleziono użytkownika z takim adresem e-mail', 'error');
+      return;
+    }
+
+    if (foundUser.id_uzytkownika === cabinet.id_wlasciciela || sharedUsers.some(u => u.id_uzytkownika === foundUser.id_uzytkownika)) {
+      if (showToast) showToast('Ten użytkownik ma już dostęp do szafki', 'error');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('uprawnienia')
+      .insert([{ id_szafki: cabinetId, id_uzytkownika: foundUser.id_uzytkownika, rola: 'czlonek' }]);
+
+    if (!error) {
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('logi_aktywnosci').insert([{
+        id_uzytkownika: user.id,
+        id_szafki: cabinetId,
+        operacja: 'dodanie',
+        szczegoly: `Udostępniono szafkę użytkownikowi: ${foundUser.email}`
+      }]);
+      
+      setInviteEmail('');
+      if (showToast) showToast('Udostępniono szafkę!', 'success');
+      fetchSharedUsers();
+    } else {
+      if (showToast) showToast('Błąd podczas udostępniania', 'error');
+    }
+  };
+
+  const handleRemoveAccess = async (userId, userEmail) => {
+    const { error } = await supabase
+      .from('uprawnienia')
+      .delete()
+      .eq('id_szafki', cabinetId)
+      .eq('id_uzytkownika', userId);
+
+    if (!error) {
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('logi_aktywnosci').insert([{
+        id_uzytkownika: user.id,
+        id_szafki: cabinetId,
+        operacja: 'usuniecie',
+        szczegoly: `Odebrano dostęp użytkownikowi: ${userEmail}`
+      }]);
+      if (showToast) showToast('Odebrano dostęp do szafki', 'success');
+      fetchSharedUsers();
+    }
+  };
+
+  const handleLeaveCabinet = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase.from('logi_aktywnosci').insert([{
+      id_uzytkownika: user.id,
+      id_szafki: cabinetId,
+      operacja: 'usuniecie',
+      szczegoly: `Użytkownik ${user.email} opuścił szafkę`
+    }]);
+
+    const { error } = await supabase
+      .from('uprawnienia')
+      .delete()
+      .eq('id_szafki', cabinetId)
+      .eq('id_uzytkownika', user.id);
+
+    if (!error) {
+      if (showToast) showToast('Opuściłeś szafkę', 'success');
+      onDelete();
+    } else {
+      if (showToast) showToast('Błąd podczas opuszczania szafki', 'error');
+    }
+  };
+
+  const confirmDeleteCabinet = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       await supabase.from('logi_aktywnosci').insert([{
@@ -144,18 +249,21 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
               <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Nazwa szafki</span>
               <input 
                 type="text" 
+                disabled={!isOwner}
                 {...register("newName", { required: "Nazwa szafki nie może być pusta!" })}
-                className={`w-full px-4 py-2.5 bg-white border ${errors.newName ? 'border-red-500' : 'border-slate-200'} rounded-lg outline-none focus:ring-2 ${errors.newName ? 'focus:ring-red-500' : 'focus:ring-slate-900'}`}
+                className={`w-full px-4 py-2.5 bg-white border ${errors.newName ? 'border-red-500' : 'border-slate-200'} rounded-lg outline-none focus:ring-2 ${errors.newName ? 'focus:ring-red-500' : 'focus:ring-slate-900'} disabled:bg-slate-100 disabled:text-slate-500`}
               />
               {errors.newName && <p className="text-red-500 text-xs font-medium mt-1 pl-1">{errors.newName.message}</p>}
             </div>
-            <button 
-              type="submit"
-              disabled={isSubmitting}
-              className="mt-6 sm:mt-6 self-start px-5 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
-            >
-              {isSubmitting ? 'Zapisywanie...' : 'Zapisz'}
-            </button>
+            {isOwner && (
+              <button 
+                type="submit"
+                disabled={isSubmitting}
+                className="mt-6 sm:mt-6 self-start px-5 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 disabled:opacity-50 transition-colors"
+              >
+                {isSubmitting ? 'Zapisywanie...' : 'Zapisz'}
+              </button>
+            )}
           </form>
 
           <div className="grid grid-cols-2 gap-4">
@@ -171,13 +279,64 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
             </div>
           </div>
 
+          {isOwner && (
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
+              <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Udostępnianie szafki</span>
+              
+              <form onSubmit={handleInviteUser} className="flex flex-col sm:flex-row gap-3">
+                <input 
+                  type="email" 
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="Adres e-mail użytkownika..."
+                  className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-900"
+                />
+                <button 
+                  type="submit"
+                  className="px-5 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  Udostępnij
+                </button>
+              </form>
+
+              {sharedUsers.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  {sharedUsers.map(u => (
+                    <div key={u.id_uzytkownika} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-200">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{u.imie} {u.nazwisko}</p>
+                        <p className="text-xs text-slate-500">{u.email}</p>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => handleRemoveAccess(u.id_uzytkownika, u.email)}
+                        className="text-xs font-semibold text-red-600 hover:text-red-800 px-2 py-1"
+                      >
+                        Usuń
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="mt-8 pt-6 border-t border-slate-100">
-            <button 
-              onClick={() => setShowDeleteConfirm(true)} 
-              className="w-full px-4 py-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl hover:bg-red-100 transition-colors"
-            >
-              Usuń szafkę
-            </button>
+            {isOwner ? (
+              <button 
+                onClick={() => setShowDeleteConfirm(true)} 
+                className="w-full px-4 py-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl hover:bg-red-100 transition-colors"
+              >
+                Usuń szafkę
+              </button>
+            ) : (
+              <button 
+                onClick={handleLeaveCabinet} 
+                className="w-full px-4 py-3 bg-red-50 text-red-600 text-sm font-bold rounded-xl hover:bg-red-100 transition-colors"
+              >
+                Opuść szafkę
+              </button>
+            )}
           </div>
 
         </div>
@@ -198,7 +357,7 @@ const CabinetSettings = ({ cabinetId, allCabinets, onBack, onUpdate, onDelete, s
                 Anuluj
               </button>
               <button 
-                onClick={potwierdzUsuniecie} 
+                onClick={confirmDeleteCabinet} 
                 className="flex-1 px-4 py-3 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-colors"
               >
                 Tak, usuń
