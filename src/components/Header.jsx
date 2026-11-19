@@ -1,10 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { User, Settings, LogOut, UserCircle } from 'lucide-react';
+import { User, Settings, LogOut, UserCircle, Bell } from 'lucide-react';
 
 const Header = ({ session, onNavigate }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [imie, setImie] = useState('');
+  const [hasNewLogs, setHasNewLogs] = useState(false);
+
+  useEffect(() => {
+    const handleUpdateLogs = (e) => setHasNewLogs(e.detail);
+    window.addEventListener('updateNotifications', handleUpdateLogs);
+    return () => window.removeEventListener('updateNotifications', handleUpdateLogs);
+  }, []);
+
+  const handleBellClick = () => {
+    if (onNavigate) onNavigate('home');
+    window.dispatchEvent(new Event('openActivityLog'));
+  };
+
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -69,7 +82,14 @@ const Header = ({ session, onNavigate }) => {
         </div>
 
         {session && (
-          <div className="relative" ref={menuRef}>
+          <div className="flex items-center gap-2">
+            
+            <button onClick={handleBellClick} className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors focus:outline-none">
+              <Bell className="w-5 h-5" />
+              {hasNewLogs && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}
+            </button>
+
+            <div className="relative" ref={menuRef}>
             
             <button 
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -115,6 +135,7 @@ const Header = ({ session, onNavigate }) => {
                 </button>
               </div>
             )}
+          </div>
           </div>
         )}
 
