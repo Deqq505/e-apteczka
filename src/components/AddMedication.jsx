@@ -50,7 +50,6 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
               showToast?.('Zeskanowano kod!', 'success');
               
               handleSearchChange({ target: { value: decodedText } });
-              setValue('ean', decodedText, { shouldValidate: true });
               
             }).catch(err => console.log("Błąd zamykania kamery", err));
           },
@@ -136,10 +135,11 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
     }
 
     // Zapis leku do szafki do bazy danych
-    await supabase.from('zasoby').insert([{
+   // Zapis leku do szafki do bazy danych
+    const { error: insertError } = await supabase.from('zasoby').insert([{
       id_szafki: cabinetId,
       id_uzytkownika_dodal: user.id,
-      ean_leku: data.ean,
+      ean_leku: data.ean || null,
       nazwa_reczna: zapisywanaNazwa,
       data_waznosci: data.dataWaznosci,
       ilosc: data.ilosc,
@@ -147,6 +147,11 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
       status: data.status,
       zdjecie_url: zdjecieUrl
     }]);
+
+    if (insertError) {
+      showToast?.('Błąd podczas zapisywania leku', 'error');
+      return;
+    }
 
     // Zapis logow aktywności do bazy danych
     await supabase.from('logi_aktywnosci').insert([{
