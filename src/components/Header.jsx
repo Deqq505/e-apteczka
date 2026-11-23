@@ -14,9 +14,11 @@ const Header = ({ session, onNavigate }) => {
   }, []);
 
   const handleBellClick = () => {
-    if (onNavigate) onNavigate('home');
+  if (onNavigate) onNavigate('home');
+  setTimeout(() => {
     window.dispatchEvent(new Event('openActivityLog'));
-  };
+  }, 100);
+};
 
   const menuRef = useRef(null);
 

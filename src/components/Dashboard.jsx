@@ -185,7 +185,7 @@ const Dashboard = ({ showToast }) => {
     
     if (!user) return;
 
-    // Pobieramy szafki - polityki RLS (Widzisz domy, do których należysz) same zadbają o przefiltrowanie
+    // Pobieranie szafki
     const { data, error } = await supabase
       .from('szafki')
       .select('*')
@@ -636,9 +636,11 @@ const Dashboard = ({ showToast }) => {
               </h3>
               
               {selectedMed.zdjecie_url ? (
-                <div className="w-full h-48 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden mb-4">
-                  <img src={selectedMed.zdjecie_url} alt="Zdjęcie leku" className="w-full h-full object-cover" />
-                </div>
+                  <img 
+                    src={selectedMed.zdjecie_url} 
+                    alt="Zdjęcie leku" 
+                    className="w-full h-full object-contain" 
+                  />
               ) : (
                 <div className="text-sm text-slate-500 mb-4">
                   Brak zdjęcia leku w szafce.

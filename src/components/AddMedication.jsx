@@ -8,6 +8,7 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [photoFile, setPhotoFile] = useState(null);
 
   const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
@@ -112,6 +113,27 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
     const { data: { user } } = await supabase.auth.getUser();
     
     const zapisywanaNazwa = data.nazwaWlasna ? data.nazwaWlasna : data.oficjalnaNazwa;
+    let zdjecieUrl = null;
+
+    if (photoFile) {
+      const fileExt = photoFile.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('zdjecia-lekow')
+        .upload(fileName, photoFile);
+
+      if (uploadError) {
+        showToast?.('Błąd podczas wgrywania zdjęcia', 'error');
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('zdjecia-lekow')
+        .getPublicUrl(fileName);
+
+      zdjecieUrl = publicUrlData.publicUrl;
+    }
 
     // Zapis leku do szafki do bazy danych
     await supabase.from('zasoby').insert([{
@@ -122,7 +144,8 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
       data_waznosci: data.dataWaznosci,
       ilosc: data.ilosc,
       jednostka: data.jednostka,
-      status: data.status
+      status: data.status,
+      zdjecie_url: zdjecieUrl
     }]);
 
     // Zapis logow aktywności do bazy danych
@@ -330,9 +353,14 @@ const AddMedication = ({ cabinetId, onSuccess, onCancel, showToast }) => {
                   <label className="cursor-pointer px-4 py-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl font-medium transition-colors shadow-sm flex items-center gap-2">
                     <CameraIcon className="w-4 h-4" />
                     <span>Zrób lub wgraj zdjęcie</span>
-                    <input type="file" className="hidden" accept="image/*" capture="environment" />
+                    <input 
+                      type="file" className="hidden" accept="image/*" 
+                      onChange={(e) => setPhotoFile(e.target.files[0] || null)} 
+                    />
                   </label>
-                  <span className="text-sm text-slate-500">Nie wybrano pliku</span>
+                  <span className="text-sm text-slate-500 truncate max-w-[200px]">
+                    {photoFile ? photoFile.name : 'Nie wybrano pliku'}
+                  </span>
                 </div>
               </div>
 
