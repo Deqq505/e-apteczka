@@ -3,8 +3,8 @@ import { supabase } from '../supabaseClient';
 import { useForm } from 'react-hook-form';
 import { Turnstile } from '@marsidev/react-turnstile';
 
-const Auth = () => {
-  const [view, setView] = useState('login');
+const Auth = ({ isRecovery, onRecoveryDone }) => {
+  const [view, setView] = useState(isRecovery ? 'update_password' : 'login');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -14,7 +14,6 @@ const Auth = () => {
   const { register, handleSubmit, watch, reset, formState: { errors, isSubmitting } } = useForm();
   
   const password = watch("password") || "";
-
 
   const passwordReqs = {
     length: password.length >= 8,
@@ -28,15 +27,11 @@ const Auth = () => {
 
   // oczekiwanie na zmiane hasla z mail
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setView('update_password');
-        setSuccessMsg('Zostałeś pomyślnie zweryfikowany. Wpisz nowe hasło poniżej.');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    if (isRecovery) {
+      setView('update_password');
+      setSuccessMsg('Zostałeś pomyślnie zweryfikowany. Wpisz nowe hasło poniżej.');
+    }
+  }, [isRecovery]);
 
   const onSubmit = async (data) => {
     setErrorMsg('');
@@ -97,6 +92,9 @@ const Auth = () => {
             szczegoly: 'Użytkownik zresetował hasło'
           }]);
         }
+
+        await supabase.auth.signOut();
+        if (onRecoveryDone) onRecoveryDone();
 
         setSuccessMsg('Hasło zostało zmienione! Zaloguj się nowym hasłem.');
         reset();
