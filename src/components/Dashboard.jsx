@@ -4,6 +4,7 @@ import AddMedication from './AddMedication';
 import CabinetSettings from './CabinetSettings';
 import { ChevronDown, X, Image as ImageIcon } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import ActivityLog from './ActivityLog';
 
 const formatQuantity = (quantity, unit) => {
   const num = parseInt(quantity);
@@ -70,6 +71,7 @@ const Dashboard = ({ showToast }) => {
   const [medDetails, setMedDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [medToDelete, setMedToDelete] = useState(null);
+  const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
 
   const { register: registerCabinet, handleSubmit: handleCabinetSubmit, reset: resetCabinet, formState: { errors: cabinetErrors, isSubmitting: isCabinetSubmitting } } = useForm();
 
@@ -183,7 +185,7 @@ const Dashboard = ({ showToast }) => {
     
     if (!user) return;
 
-    // Pobieramy szafki - polityki RLS (Widzisz domy, do których należysz) same zadbają o przefiltrowanie
+    // Pobieranie szafki
     const { data, error } = await supabase
       .from('szafki')
       .select('*')
@@ -220,16 +222,57 @@ const Dashboard = ({ showToast }) => {
   useEffect(() => {
     fetchMedications();
 
+    const checkLogs = async () => {
+      if (!selectedCabinet) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { data: log } = await supabase
+        .from('logi_aktywnosci')
+        .select('data_operacji')
+        .eq('id_szafki', selectedCabinet)
+        .order('data_operacji', { ascending: false })
+        .limit(1)
+        .single();
+        
+      const { data: read } = await supabase
+        .from('odczyty_logow')
+        .select('data_ostatniego_odczytu')
+        .eq('id_szafki', selectedCabinet)
+        .eq('id_uzytkownika', user.id)
+        .single();
+      
+      const hasNew = log && (!read || new Date(log.data_operacji) > new Date(read.data_ostatniego_odczytu));
+      window.dispatchEvent(new CustomEvent('updateNotifications', { detail: hasNew }));
+    };
+
+    checkLogs();
+
     if (!selectedCabinet) return;
 
     const channel = supabase.channel('db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'zasoby', filter: `id_szafki=eq.${selectedCabinet}` }, fetchMedications)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'szafki' }, fetchCabinets)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'uprawnienia' }, fetchCabinets)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logi_aktywnosci', filter: `id_szafki=eq.${selectedCabinet}` }, checkLogs)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [selectedCabinet, view]);
+
+  // nasłuchiwanie powiadomien
+  useEffect(() => {
+    const handleOpenLogFromHeader = async () => {
+      if (!selectedCabinet) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('odczyty_logow').upsert({ id_uzytkownika: user.id, id_szafki: selectedCabinet, data_ostatniego_odczytu: new Date().toISOString() });
+      window.dispatchEvent(new CustomEvent('updateNotifications', { detail: false }));
+      
+      setIsActivityLogOpen(true);
+    };
+
+    window.addEventListener('openActivityLog', handleOpenLogFromHeader);
+    return () => window.removeEventListener('openActivityLog', handleOpenLogFromHeader);
+  }, [selectedCabinet]);
 
   // Dodawanie szafki do bazy danych
   const handleAddCabinet = async (data) => {
@@ -593,9 +636,11 @@ const Dashboard = ({ showToast }) => {
               </h3>
               
               {selectedMed.zdjecie_url ? (
-                <div className="w-full h-48 bg-slate-100 rounded-xl border border-slate-200 overflow-hidden mb-4">
-                  <img src={selectedMed.zdjecie_url} alt="Zdjęcie leku" className="w-full h-full object-cover" />
-                </div>
+                  <img 
+                    src={selectedMed.zdjecie_url} 
+                    alt="Zdjęcie leku" 
+                    className="w-full h-full object-contain" 
+                  />
               ) : (
                 <div className="text-sm text-slate-500 mb-4">
                   Brak zdjęcia leku w szafce.
@@ -631,6 +676,12 @@ const Dashboard = ({ showToast }) => {
         </div>
       )}
 
+      {isActivityLogOpen && (
+        <ActivityLog 
+          cabinetId={selectedCabinet} 
+          onClose={() => setIsActivityLogOpen(false)} 
+        />
+      )}
       {medToDelete && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 custom-fade" onClick={() => setMedToDelete(null)}>
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
