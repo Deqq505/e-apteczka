@@ -13,3 +13,12 @@ body {
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
 }
+
+.custom-fade {
+  animation: simpleFade 0.3s ease-out forwards;
+}
+
+@keyframes simpleFade {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}

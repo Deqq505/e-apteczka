@@ -1,0 +1,714 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabaseClient';
+import AddMedication from './AddMedication';
+import CabinetSettings from './CabinetSettings';
+import { ChevronDown, X, Image as ImageIcon } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import ActivityLog from './ActivityLog';
+
+const formatQuantity = (quantity, unit) => {
+  const num = parseInt(quantity);
+  if (isNaN(num)) return `${quantity} ${unit}`;
+
+  const pluralRule = new Intl.PluralRules('pl-PL').select(num);
+
+  if (unit === 'sztuki') {
+    if (pluralRule === 'one') return '1 sztuka';
+    if (pluralRule === 'few') return `${quantity} sztuki`;
+    return `${quantity} sztuk`;
+  }
+  
+  if (unit === 'listek') {
+    if (pluralRule === 'one') return '1 listek';
+    if (pluralRule === 'few') return `${quantity} listki`;
+    return `${quantity} listków`;
+  }
+
+  if (unit === 'opakowanie') {
+    if (pluralRule === 'one') return '1 opakowanie';
+    if (pluralRule === 'few') return `${quantity} opakowania`;
+    return `${quantity} opakowań`;
+  }
+
+  return `${quantity} ${unit}`;
+};
+
+const getDiffDays = (dateString) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); 
+  
+  const expDate = new Date(dateString);
+  expDate.setHours(0, 0, 0, 0);
+  
+  return Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+};
+
+const formatDaysLeft = (days) => {
+  if (days === 0) return 'Koniec ważności dzisiaj!';
+  if (days === 1) return 'Został 1 dzień do przeterminowania';
+  
+  const pluralRule = new Intl.PluralRules('pl-PL').select(Math.abs(days));
+  
+  if (pluralRule === 'few') {
+    return `Zostały ${days} dni do przeterminowania`;
+  }
+  return `Zostało ${days} dni do przeterminowania`;
+};
+
+const Dashboard = ({ showToast }) => {
+  const [cabinets, setCabinets] = useState([]);
+  const [medications, setMedications] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [view, setView] = useState('list');
+  const [selectedCabinet, setSelectedCabinet] = useState('');
+  const [isListActive, setIsListActive] = useState(true);
+  const [showArchive, setShowArchive] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const [selectedMed, setSelectedMed] = useState(null);
+  const [medDetails, setMedDetails] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [medToDelete, setMedToDelete] = useState(null);
+  const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
+
+  const { register: registerCabinet, handleSubmit: handleCabinetSubmit, reset: resetCabinet, formState: { errors: cabinetErrors, isSubmitting: isCabinetSubmitting } } = useForm();
+
+  // Nasłuchiwanie na logo z Headera
+  useEffect(() => {
+    const handleResetToHome = () => setView('list');
+    const handleOpenSettings = () => setView('cabinetSettings');
+    
+    window.addEventListener('resetToHome', handleResetToHome);
+    window.addEventListener('openCabinetSettings', handleOpenSettings);
+    
+    return () => {
+      window.removeEventListener('resetToHome', handleResetToHome);
+      window.removeEventListener('openCabinetSettings', handleOpenSettings);
+    };
+  }, []);
+
+  // Modal szczegołów leku
+  const handleOpenMedModal = async (med) => {
+    setSelectedMed(med);
+    setIsModalOpen(true);
+    setMedDetails(null); 
+
+    if (med.ean_leku) {
+      const { data, error } = await supabase
+        .from('baza_lekow')
+        .select('*')
+        .eq('ean', med.ean_leku)
+        .single();
+        
+      if (data && !error) {
+        setMedDetails(data);
+      }
+    }
+  };
+
+  const handleCloseMedModal = () => {
+    setIsModalOpen(false);
+    setSelectedMed(null);
+    setMedDetails(null);
+    setMedToDelete(null);
+  };
+
+  // Zmiana statusu i przenoszenie leku
+  const changeMedicationStatus = async (newStatus) => {
+    if (!selectedMed || selectedMed.status === newStatus) return;
+
+    const { error } = await supabase
+      .from('zasoby')
+      .update({ status: newStatus })
+      .eq('id_zasobu', selectedMed.id_zasobu);
+
+    if (!error) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('logi_aktywnosci').insert([{
+          id_uzytkownika: user.id,
+          id_szafki: selectedCabinet,
+          operacja: 'edycja',
+          szczegoly: `Zmieniono status leku "${selectedMed.nazwa_reczna}" na "${newStatus}"`
+        }]);
+      }
+
+      setMedications(prev => prev.map(med => 
+        med.id_zasobu === selectedMed.id_zasobu ? { ...med, status: newStatus } : med
+      ));
+
+      if (showToast) {
+        showToast(newStatus === 'w szafce' ? 'Lek przywrócony do szafki' : `Lek przeniesiony do archiwum (${newStatus})`, 'success');
+      }
+      handleCloseMedModal();
+    } else {
+      if (showToast) showToast('Wystąpił błąd przy zmianie statusu', 'error');
+    }
+  };
+  
+  //usuwanie leku z bazy
+  const confirmDeleteMedication = async () => {
+    if (!medToDelete) return;
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (user) {
+      await supabase.from('logi_aktywnosci').insert([{
+        id_uzytkownika: user.id,
+        id_szafki: selectedCabinet,
+        operacja: 'usuniecie',
+        szczegoly: `Usunięto trwale lek z bazy: "${medToDelete.nazwa_reczna}"`
+      }]);
+    }
+
+    const { error } = await supabase
+      .from('zasoby')
+      .delete()
+      .eq('id_zasobu', medToDelete.id_zasobu);
+
+    if (!error) {
+      setMedications(prev => prev.filter(med => med.id_zasobu !== medToDelete.id_zasobu));
+      if (showToast) showToast('Lek został trwale usunięty', 'success');
+      handleCloseMedModal(); 
+    } else {
+      if (showToast) showToast('Wystąpił błąd przy usuwaniu leku', 'error');
+      setMedToDelete(null);
+    }
+  };
+
+  //Wypisanie szafek
+  const fetchCabinets = async () => {
+    setIsLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) return;
+
+    // Pobieranie szafki
+    const { data, error } = await supabase
+      .from('szafki')
+      .select('*')
+      .order('data_utworzenia', { ascending: false });
+
+    if (!error && data) {
+      setCabinets(data);
+      if (data.length > 0 && !selectedCabinet) {
+        setSelectedCabinet(data[0].id_szafki);
+      }
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchCabinets();
+  }, []);
+  
+//Wypisanie leków z szafki
+    const fetchMedications = async () => {
+      if (!selectedCabinet || view !== 'list') return; 
+
+      const { data, error } = await supabase
+        .from('zasoby')
+        .select('*')
+        .eq('id_szafki', selectedCabinet);
+
+      if (!error) {
+        setMedications(data || []);
+      }
+    };
+
+  // nasłuchiwanie realtime
+  useEffect(() => {
+    fetchMedications();
+
+    const checkLogs = async () => {
+      if (!selectedCabinet) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { data: log } = await supabase
+        .from('logi_aktywnosci')
+        .select('data_operacji')
+        .eq('id_szafki', selectedCabinet)
+        .order('data_operacji', { ascending: false })
+        .limit(1)
+        .single();
+        
+      const { data: read } = await supabase
+        .from('odczyty_logow')
+        .select('data_ostatniego_odczytu')
+        .eq('id_szafki', selectedCabinet)
+        .eq('id_uzytkownika', user.id)
+        .single();
+      
+      const hasNew = log && (!read || new Date(log.data_operacji) > new Date(read.data_ostatniego_odczytu));
+      window.dispatchEvent(new CustomEvent('updateNotifications', { detail: hasNew }));
+    };
+
+    checkLogs();
+
+    if (!selectedCabinet) return;
+
+    const channel = supabase.channel('db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'zasoby', filter: `id_szafki=eq.${selectedCabinet}` }, fetchMedications)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'szafki' }, fetchCabinets)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'uprawnienia' }, fetchCabinets)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logi_aktywnosci', filter: `id_szafki=eq.${selectedCabinet}` }, checkLogs)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedCabinet, view]);
+
+  // nasłuchiwanie powiadomien
+  useEffect(() => {
+    const handleOpenLogFromHeader = async () => {
+      if (!selectedCabinet) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('odczyty_logow').upsert({ id_uzytkownika: user.id, id_szafki: selectedCabinet, data_ostatniego_odczytu: new Date().toISOString() });
+      window.dispatchEvent(new CustomEvent('updateNotifications', { detail: false }));
+      
+      setIsActivityLogOpen(true);
+    };
+
+    window.addEventListener('openActivityLog', handleOpenLogFromHeader);
+    return () => window.removeEventListener('openActivityLog', handleOpenLogFromHeader);
+  }, [selectedCabinet]);
+
+  // Dodawanie szafki do bazy danych
+  const handleAddCabinet = async (data) => {
+    const { newCabinetName } = data;
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: cabinetData, error: cabinetError } = await supabase
+      .from('szafki')
+      .insert([{ nazwa_szafki: newCabinetName, id_wlasciciela: user.id }])
+      .select();
+    
+    //dodanie logu aktywności do bazy danych
+    if (!cabinetError && cabinetData && cabinetData[0]) {
+      await supabase.from('logi_aktywnosci').insert([{
+        id_uzytkownika: user.id,
+        id_szafki: cabinetData[0].id_szafki,
+        operacja: 'dodanie', 
+        szczegoly: `Utworzono nową szafkę: ${newCabinetName}`
+      }]);
+      resetCabinet();
+      setView('list'); 
+      fetchCabinets();
+
+      if (showToast) {
+        showToast('Szafka utworzona pomyślnie!', 'success');
+      }
+    } else {
+      if (showToast) {
+        showToast('Wystąpił błąd podczas dodawania szafki.', 'error');
+      }
+    }
+  };
+
+  // filtrowanie lekow
+  const activeMedications = medications
+    .filter(medication => medication.status === 'w szafce')
+    .filter(medication => (medication.nazwa_reczna || '').toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const archivedMedications = medications
+    .filter(medication => medication.status !== 'w szafce')
+    .filter(medication => (medication.nazwa_reczna || '').toLowerCase().includes(searchQuery.toLowerCase()));
+
+
+  const MedicationCard = ({ medication, isArchived }) => {
+    const diffDays = getDiffDays(medication.data_waznosci);
+    
+    // Kolory w zależności od daty waznosci i statusu
+    let colors = 'bg-white border-slate-200 text-slate-800';
+    if (isArchived) {
+      colors = 'bg-slate-50 border-slate-200 text-slate-500 opacity-70';
+    } else if (diffDays < 0) {
+      colors = 'bg-red-50 border-red-200 text-red-900';
+    } else if (diffDays <= 14) {
+      colors = 'bg-orange-50 border-orange-200 text-orange-900';
+    }
+    
+    return (
+      <div 
+        onClick={() => handleOpenMedModal(medication)}
+        className={`p-4 border rounded-xl shadow-sm mb-3 flex flex-row justify-between items-center transition-colors cursor-pointer hover:shadow-md ${colors}`}
+      >
+        <div>
+          <h3 className={`text-lg font-semibold ${isArchived ? 'line-through' : ''}`}>
+            {medication.nazwa_reczna}
+          </h3>
+          {isArchived && <p className="text-[10px] uppercase font-bold opacity-50 tracking-tight">{medication.status}</p>}
+          <p className="text-sm mt-0.5 opacity-80">
+            Zostało: <span className="font-medium">{formatQuantity(medication.ilosc, medication.jednostka)}</span>
+          </p>
+        </div>
+        <div className="text-right flex flex-col items-end">
+          <span className="block text-xs uppercase tracking-wider opacity-60 mb-0.5">Ważność</span>
+          <span className="font-bold">{medication.data_waznosci}</span>
+          
+          {/* Wyswietlanie ile zostalo dni waznosci */}
+          {!isArchived && diffDays < 0 && (
+            <span className="text-xs font-semibold text-red-700 bg-red-100/50 px-1.5 py-0.5 rounded mt-1">
+              Przeterminowany od {Math.abs(diffDays)} {Math.abs(diffDays) === 1 ? 'dnia' : 'dni'}
+            </span>
+          )}
+          {!isArchived && diffDays >= 0 && diffDays <= 14 && (
+            <span className="text-xs font-semibold text-orange-700 bg-orange-100/50 px-1.5 py-0.5 rounded mt-1">
+              {formatDaysLeft(diffDays)}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  if (isLoading && cabinets.length === 0) {
+    return (
+      <div key="view-loading" className="max-w-3xl mx-auto mt-20 text-center text-slate-400 font-medium custom-fade">
+        Ładowanie danych z bazy...
+      </div>
+    );
+  }
+
+  // Wyświetlenie ustawień szafki
+  if (view === 'cabinetSettings') {
+    if (!selectedCabinet) {
+      return <div className="text-center py-10 custom-fade text-slate-500">Brak wybranej szafki.</div>;
+    }
+    return (
+      <CabinetSettings 
+        key={`settings-${selectedCabinet}`}
+        cabinetId={selectedCabinet} 
+        allCabinets={cabinets}
+        onBack={() => setView('list')} 
+        onUpdate={() => fetchCabinets()} 
+        onDelete={() => { 
+          setSelectedCabinet(''); 
+          setView('list'); 
+          fetchCabinets(); 
+        }} 
+        showToast={showToast} 
+      />
+    );
+  }
+
+  // Wyświetlenie formularza dodawania szafki
+  if (view === 'addCabinet') {
+    return (
+      <div key="view-add-cabinet" className="max-w-md mx-auto mt-6 p-6 bg-white rounded-2xl border border-slate-200 shadow-sm custom-fade">
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Nowa szafka</h2>
+        <form onSubmit={handleCabinetSubmit(handleAddCabinet)} noValidate>
+          <div className="mb-6">
+            <input 
+              autoFocus
+              type="text" 
+              {...registerCabinet("newCabinetName", { 
+                required: "Podaj nazwę szafki",
+                validate: value => value.trim() !== '' || "Podaj nazwę szafki"
+              })}
+              className={`w-full px-4 py-3 bg-slate-50 border ${cabinetErrors.newCabinetName ? 'border-red-500 focus:ring-2 focus:ring-red-500' : 'border-slate-200'} rounded-xl outline-none`}
+              placeholder="Nazwa szafki..."
+            />
+            {cabinetErrors.newCabinetName && <p className="text-red-500 text-xs font-medium mt-1 pl-1">{cabinetErrors.newCabinetName.message}</p>}
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={() => { setView('list'); resetCabinet(); }} className="flex-1 px-4 py-3 border rounded-xl">Anuluj</button>
+            <button type="submit" disabled={isCabinetSubmitting} className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-xl disabled:opacity-50">Utwórz</button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+  
+  // Wyświetlenie formularza dodawania leku
+  if (view === 'addMedication') {
+    return (
+      <AddMedication 
+        key="view-add-medication"
+        cabinetId={selectedCabinet} 
+        onSuccess={() => setView('list')} 
+        onCancel={() => setView('list')} 
+        showToast={showToast}
+      />
+    );
+  }
+
+  {/*Główna zawartość dashboardu*/}
+  return (
+    <div key="view-main-list" className="max-w-3xl mx-auto mt-6 p-4 custom-fade">
+      
+      {cabinets.length === 0 ? (
+        <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm text-center">
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Brak szafek</h2>
+          <button 
+            onClick={() => setView('addCabinet')}
+            className="bg-slate-900 text-white px-6 py-3 rounded-xl font-medium"
+          >
+            + Utwórz pierwszą szafkę
+          </button>
+        </div>
+      ) : (
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="w-full sm:w-auto">
+            <label className="text-sm font-medium text-slate-500 mb-1.5 block">Wybierz szafkę:</label>
+            <div className="flex gap-2">
+              <select 
+                value={selectedCabinet}
+                onChange={(e) => setSelectedCabinet(e.target.value)}
+                className="w-full sm:w-72 bg-slate-50 border border-slate-300 text-slate-800 text-lg rounded-lg p-2.5"
+              >
+                {cabinets.map(cabinet => (
+                  <option key={cabinet.id_szafki} value={cabinet.id_szafki}>{cabinet.nazwa_szafki}</option>
+                ))}
+              </select>
+              <button onClick={() => setView('addCabinet')} className="p-2.5 bg-slate-100 rounded-lg">+</button>
+            </div>
+          </div>
+          <button 
+  onClick={() => setView('addMedication')} 
+  className="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-medium"
+>
+  + Dodaj lek
+</button>
+        </div>
+      )}
+      
+      {cabinets.length > 0 && (
+        <>
+          {/* wyszukiwarka lekow */}
+          <div className="mb-6">
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Wyszukaj lek w szafce..."
+              className="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl outline-none shadow-sm"
+            />
+            {searchQuery && activeMedications.length === 0 && archivedMedications.length === 0 && (
+              <div className="mt-2 text-red-500 text-sm font-medium pl-1">
+                Brak wyszukiwanego leku w szafce.
+              </div>
+            )}
+          </div>
+
+          <div className="mb-8">
+            <button 
+              onClick={() => setIsListActive(!isListActive)}
+              className="w-full flex items-center justify-between mb-4 p-2 -ml-2 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-bold text-slate-800">Leki w szafce</h2>
+                <span className="bg-slate-200 text-slate-700 py-0.5 px-2.5 rounded-full text-sm font-semibold">{activeMedications.length}</span>
+              </div>
+              <ChevronDown className={`w-5 h-5 text-slate-500 transform transition-transform ${isListActive ? 'rotate-180' : ''}`} />
+            </button>
+            {isListActive && (
+              <div>
+                {activeMedications.length > 0 ? (
+                  activeMedications.map(medication => <MedicationCard key={medication.id_zasobu} medication={medication} isArchived={false} />)
+                ) : (
+                  <div className="bg-white p-8 rounded-xl border border-dashed border-slate-300 text-center text-slate-500">Brak leków w tej szafce.</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <button 
+              onClick={() => setShowArchive(!showArchive)}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 p-4 rounded-xl border border-slate-200 flex justify-between items-center transition-colors font-medium"
+            >
+              <div className="flex items-center gap-2">
+                <span>Archiwum</span>
+                <span className="bg-white text-slate-500 py-0.5 px-2 rounded-full text-xs font-bold border border-slate-200">{archivedMedications.length}</span>
+              </div>
+              <ChevronDown className={`w-5 h-5 transform transition-transform ${showArchive ? 'rotate-180' : ''}`} />
+            </button>
+            {showArchive && (
+              <div className="mt-3">
+                {archivedMedications.length > 0 ? (
+                  archivedMedications.map(medication => <MedicationCard key={medication.id_zasobu} medication={medication} isArchived={true} />)
+                ) : (
+                  <div className="p-6 text-center text-slate-400 border border-transparent">Archiwum jest puste.</div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Szczegóły leku modal*/}
+      {isModalOpen && selectedMed && (
+        <div key="view-med-modal" className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 custom-fade" onClick={handleCloseMedModal}>
+          
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200" onClick={(e) => e.stopPropagation()}>
+            
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50 shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">
+                  {selectedMed.nazwa_reczna || 'Nieznany lek'}
+                </h2>
+                <p className="text-sm font-medium text-slate-500 mt-1">EAN: {selectedMed.ean_leku || 'Brak powiązania'}</p>
+              </div>
+              <button 
+                onClick={handleCloseMedModal} 
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            
+            <div className="p-5 sm:p-6 overflow-y-auto">
+              
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Szczegóły w szafce</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Ilość</div>
+                  <div className="font-bold text-slate-800">{formatQuantity(selectedMed.ilosc, selectedMed.jednostka)}</div>
+                </div>
+                <div className="sm:col-span-2">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Data ważności</div>
+                  <div className="font-bold text-slate-800">{selectedMed.data_waznosci || 'Brak'}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Status</div>
+                  <div className="font-bold text-slate-800 capitalize">{selectedMed.status}</div>
+                </div>
+              </div>
+
+              
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Szczegóły z rejestru</h3>
+              {medDetails ? (
+                <div className="space-y-4 mb-8">
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Oficjalna nazwa</div>
+                    <div className="text-sm font-medium text-slate-800">{medDetails.nazwa_leku || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Substancja czynna</div>
+                    <div className="text-sm font-medium text-slate-800">{medDetails.substancja_czynna || '-'}</div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Dawka</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.dawka || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Postać</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.postac_farmaceutyczna || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Droga podania</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.rodzaj_podania || '-'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Wielkość op.</div>
+                      <div className="text-sm font-medium text-slate-800">{medDetails.ilosc_tabletek || '-'}</div>
+                    </div>
+                  </div>
+                  
+                  
+                  {medDetails.ulotka_url && (
+                    <div className="pt-3">
+                      <a 
+                        href={medDetails.ulotka_url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="inline-flex items-center justify-center w-full sm:w-auto px-5 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-800 transition-colors shadow-sm gap-2"
+                      >
+                        Pobierz ulotkę (PDF)
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500 bg-slate-50 p-4 rounded-xl border border-slate-100 mb-8 italic">
+                  {selectedMed.ean_leku ? 'Ładowanie szczegółów z rejestru...' : 'Lek dodany bez kodu EAN. Brak powiązania z oficjalną bazą.'}
+                </div>
+              )}
+
+              
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-slate-400" />
+                Zdjęcie opakowania
+              </h3>
+              
+              {selectedMed.zdjecie_url ? (
+                  <img 
+                    src={selectedMed.zdjecie_url} 
+                    alt="Zdjęcie leku" 
+                    className="w-full h-full object-contain" 
+                  />
+              ) : (
+                <div className="text-sm text-slate-500 mb-4">
+                  Brak zdjęcia leku w szafce.
+                </div>
+              )}
+            </div>
+
+            {/* dolna stopka  */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
+              <button 
+                onClick={() => setMedToDelete(selectedMed)}
+                className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-200 text-red-600 hover:bg-red-50 text-sm font-medium rounded-xl transition-colors shadow-sm"
+              >
+                Usuń lek
+              </button>
+              
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:block">Zmień status:</span>
+                <select 
+                  value={selectedMed.status}
+                  onChange={(e) => changeMedicationStatus(e.target.value)}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-300 text-slate-800 text-sm font-medium rounded-xl outline-none cursor-pointer focus:ring-2 focus:ring-slate-900 shadow-sm"
+                >
+                  <option value="w szafce">w szafce</option>
+                  <option value="zuzyty">zużyty</option>
+                  <option value="przeterminowany">przeterminowany</option>
+                  <option value="wyrzucony">wyrzucony</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {isActivityLogOpen && (
+        <ActivityLog 
+          cabinetId={selectedCabinet} 
+          onClose={() => setIsActivityLogOpen(false)} 
+        />
+      )}
+      {medToDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 custom-fade" onClick={() => setMedToDelete(null)}>
+          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Usunąć lek?</h3>
+            <p className="text-slate-500 text-sm mb-6">
+              Czy na pewno chcesz trwale usunąć ten lek z bazy? Zniknie on również z archiwum. Tej operacji nie można cofnąć.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setMedToDelete(null)} 
+                className="flex-1 px-4 py-3 border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                Anuluj
+              </button>
+              <button 
+                onClick={confirmDeleteMedication} 
+                className="flex-1 px-4 py-3 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-colors"
+              >
+                Tak, usuń
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+export default Dashboard;

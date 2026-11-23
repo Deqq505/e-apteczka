@@ -1,0 +1,29 @@
+name: Daily Meds Database Update
+
+on:
+  schedule:
+  # 1:00 UTC (3:00 czasu Polskiego)
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install @supabase/supabase-js papaparse
+
+      - name: Run update script
+        run: node scripts/update-meds.js
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
