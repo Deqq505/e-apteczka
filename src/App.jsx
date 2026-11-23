@@ -7,6 +7,7 @@ import { supabase } from './supabaseClient';
 
 function App() {
   const [session, setSession] = useState(null);
+  const [isRecovery, setIsRecovery] = useState(false);
   const [toast, setToast] = useState(null);
   const [currentView, setCurrentView] = useState('home');
 
@@ -27,10 +28,13 @@ function App() {
     } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       
-      if (event === 'SIGNED_IN') {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovery(true);
+      } else if (event === 'SIGNED_IN') {
         setCurrentView('home');
         showToast('Zalogowano pomyślnie!', 'success');
       } else if (event === 'SIGNED_OUT') {
+        setIsRecovery(false);
         showToast('Wylogowano pomyślnie.', 'info');
       }
     });
@@ -58,11 +62,14 @@ function App() {
         </div>
       )}
 
-      <Header session={session} onNavigate={setCurrentView} />
+      <Header session={isRecovery ? null : session} onNavigate={setCurrentView} />
       
       <main className="p-4">
-        {!session ? (
-          <Auth />
+        {!session || isRecovery ? (
+          <Auth 
+            isRecovery={isRecovery} 
+            onRecoveryDone={() => setIsRecovery(false)} 
+          />
         ) : (
           currentView === 'profile' ? (
             <Profile session={session} />
